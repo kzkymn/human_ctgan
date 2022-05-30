@@ -1,84 +1,92 @@
 # %%
-
 from IPython import get_ipython
 from hctgan import HCTGANSynthesizer
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import (accuracy_score, confusion_matrix,
                              f1_score, precision_score, recall_score,
                              roc_auc_score)
 from sklearn.datasets import load_iris
+import torch
 from xgboost import XGBClassifier
-import pandas as pd
-import numpy as np
+
+from util import create_wrong_feedback, print_diff_between_original_and_generated_data
 
 # %%
 get_ipython().run_line_magic('load_ext', 'autoreload')
 get_ipython().run_line_magic('autoreload', '2')
 
+# %%[markdown]
+# Options
+
 # %%
+sigma = 10
+hctgan_path = './checkpoint/htcgan.pth'
+sampled_data_path = './output/sampled_data.pth'
 
-
-# from ctgan import CTGANSynthesizer
+feedback_function = create_wrong_feedback
 
 # %%
 X, y = load_iris(return_X_y=True, as_frame=True)
-df = X.copy()
-df['target'] = y.copy()
-df
-
-# %%
-df0_train, df_test = train_test_split(df,
-                                      test_size=0.2,
-                                      random_state=0,
-                                      stratify=df['target'])
+df_train = X.copy()
+df_train['target'] = y.copy()
+df_train
 
 # %%
 discrete_columns = [
     'target'
 ]
 
-hctgan0 = HCTGANSynthesizer()
-hctgan0.fit(df0_train,
-            discrete_columns=discrete_columns,
-            epochs=10)
+hctgan = HCTGANSynthesizer()
+hctgan.fit(df_train,
+           discrete_columns=discrete_columns)
+original_sample = hctgan.sample(10)
 
 # %%
-
-
-def print_diff_between_original_and_generated_data(df0_train,
-                                                   hctgan0,
-                                                   n_samples=10000,
-                                                   target_colname='target'):
-    sampled_df = hctgan0.sample(n_samples)
-
-    for c in df0_train.columns:
-        if target_colname is not None and c != target_colname:
-            continue
-        print(c)
-        print("original data")
-        print(df0_train[c].value_counts(normalize=True))
-
-        print("generated data")
-        print(sampled_df[c].value_counts(normalize=True))
-        print('=====')
-
-
-print_diff_between_original_and_generated_data(df0_train, hctgan0)
+print('================')
+print('== Only CTGAN ==')
+print('================')
+print_diff_between_original_and_generated_data(df_train, hctgan)
 
 # %%
+for i in range(1000):
+    sampled_data_tensor, data_for_feedback, perturbations = hctgan.sample_for_human_evaluation(n=20,
+                                                                                               r=5,
+                                                                                               sigma=sigma)
 
+    # torch.save(sampled_data_tensor.state_dict(), sampled_data_path)
+    # hctgan.save(path=hctgan_path)
 
-def create_random_feedback(data_for_feedback):
-    return np.random.rand(len(data_for_feedback))
+    # del hctgan, sampled_data_tensor
 
+    # hctgan = HCTGANSynthesizer.load(path=hctgan_path)
+    # sampled_data_tensor = torch.load(sampled_data_path).to(hctgan._device)
 
-for _ in range(10):
-    sampled_data_tensor, data_for_feedback, perturbations = hctgan0.sample_for_human_evaluation(n=5,
-                                                                                                r=5)
-    feedback_probs = create_random_feedback(data_for_feedback)
-    hctgan0.fit_to_feedback(sampled_data_tensor,
-                            feedback_probs,
-                            perturbations)
-    print_diff_between_original_and_generated_data(df0_train, hctgan0)
+    feedback_probs = feedback_function(data_for_feedback)
+    hctgan.fit_to_feedback(sampled_data_tensor,
+                           feedback_probs,
+                           perturbations,
+                           sigma=sigma)
+
+    if i != 0 and i % 100 == 0:
+        print('==============')
+        print(f'=== i {i: 03d} ===')
+        print('==============')
+        print_diff_between_original_and_generated_data(
+            df_train, hctgan, show_original_data_info=False)
+
+# %%
+print('=============')
+print('=== Final ===')
+print('=============')
+print_diff_between_original_and_generated_data(
+    df_train, hctgan,  show_original_data_info=False)
+
+# %%
+trained_sample = hctgan.sample(10)
+
+# %%
+original_sample
+
+# %%
+trained_sample
 
 # %%
