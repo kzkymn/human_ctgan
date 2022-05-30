@@ -1,0 +1,29 @@
+{
+    "name": "human_ctgan",
+    "context": "..",
+    "dockerFile": "Dockerfile",
+    "settings": {
+        "http.proxySupport": "off",
+        "jupyter.alwaysTrustNotebooks": true,
+        "python.pythonPath": "/home/vscode/.venv/human_ctgan/bin/python",
+        "python.linting.enabled": true
+    },
+    "appPort": [
+        9020
+    ],
+    "extensions": [
+        "ms-python.vscode-pylance",
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "himanoa.python-autopep8"
+    ],
+    "workspaceFolder": "/home/vscode/human_ctgan",
+    "workspaceMount": "type=bind,source=${localWorkspaceFolder},target=/home/vscode/human_ctgan/,type=bind",
+    "runArgs": [
+        "--gpus",
+        "all",
+        "--shm-size",
+        "1024m"
+    ],
+    "remoteUser": "root"
+}

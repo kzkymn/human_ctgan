@@ -1,0 +1,1 @@
+from .hctgan import HCTGANSynthesizer
