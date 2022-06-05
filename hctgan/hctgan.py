@@ -157,3 +157,30 @@ class HCTGANSynthesizer(CTGANSynthesizer):
             (n, r, perturbations.shape[1]))
 
         return raw_data_tensor, self._transformer.inverse_transform(data), perturbations
+
+    @staticmethod
+    def _save_data_for_feedback(data_for_feedback,
+                                csv_path,
+                                target_colname='feedback'):
+        res_df = data_for_feedback.copy()
+        res_df[target_colname] = ""
+        res_df.to_csv(csv_path, encoding='utf-8', index=False, header=True)
+
+    @random_state
+    def create_feedback_data_csv(self,
+                                 csv_path,
+                                 n,
+                                 condition_column=None,
+                                 condition_value=None,
+                                 r=5,
+                                 sigma=0.01,
+                                 target_colname='feedback'):
+        _, data_for_feedback, _ = self.sample_for_human_evaluation(n=n,
+                                                                   condition_column=condition_column,
+                                                                   condition_value=condition_value,
+                                                                   r=r,
+                                                                   sigma=sigma)
+
+        self._save_data_for_feedback(data_for_feedback=data_for_feedback,
+                                     csv_path=csv_path,
+                                     target_colname=target_colname)

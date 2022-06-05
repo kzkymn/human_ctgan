@@ -16,11 +16,3 @@ def print_diff_between_original_and_generated_data(original_data,
         print("generated data")
         print(sampled_df[c].value_counts(normalize=True))
         print('=====')
-
-
-def save_data_for_feedback(data_for_feedback,
-                           csv_path,
-                           target_colname='feedback'):
-    res_df = data_for_feedback.copy()
-    res_df[target_colname] = ""
-    res_df.to_csv(csv_path, encoding='utf-8', index=False, header=True)
