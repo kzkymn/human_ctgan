@@ -23,6 +23,8 @@ RUN apt update && apt -y full-upgrade \
     && python3.7 -m pip install -U pip \
     && python3.7 -m pip install setuptools wheel
 
+RUN apt -y install graphviz
+
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd -s /bin/bash --uid $USER_UID --gid $USER_GID -m $USERNAME \
     && apt -y install sudo \

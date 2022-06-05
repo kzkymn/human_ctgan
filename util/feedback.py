@@ -8,8 +8,7 @@ def create_random_feedback(data_for_feedback):
 
 def create_wrong_feedback(data_for_feedback,
                           target_colname='target'):
-    res = [0 if item != 2 else np.random.rand(
-        1)[0] for item in data_for_feedback[target_colname]]
+    res = [0 if item != 2 else 1 for item in data_for_feedback[target_colname]]
     return np.array(res)
 
 

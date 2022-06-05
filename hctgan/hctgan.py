@@ -35,6 +35,10 @@ class HCTGANSynthesizer(CTGANSynthesizer):
                         x,
                         feedback_probs,
                         perturbations,
+                        condition_column=None,
+                        condition_value=None,
+                        n=20,
+                        r=5,
                         sigma=0.01,
                         ):
         N = x.shape[0]
@@ -108,6 +112,7 @@ class HCTGANSynthesizer(CTGANSynthesizer):
         data_tensor = torch.cat(data, dim=0)
         data_tensor = data_tensor[:n]
         data_tensor = data_tensor.clone().cpu()
+        # data_tensor = data_tensor.cpu()
 
         return data_tensor
 
