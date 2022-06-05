@@ -1,3 +1,4 @@
+from copy import deepcopy
 from ctgan import CTGANSynthesizer
 from ctgan.synthesizers.base import random_state
 
@@ -139,7 +140,7 @@ class HCTGANSynthesizer(CTGANSynthesizer):
                     loc=0, scale=sigma, size=col_num)
 
                 new_row_added_delta = row.detach().numpy()
-                new_row_subtracted_delta = row.detach().numpy()
+                new_row_subtracted_delta = deepcopy(new_row_added_delta)
 
                 new_row_added_delta += mn_distribution_vector
                 new_row_subtracted_delta -= mn_distribution_vector
