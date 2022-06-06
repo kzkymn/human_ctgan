@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.datasets import load_iris
 import torch
 
-from util import feedback, print_diff_between_original_and_generated_data
+from util import print_diff_between_original_and_generated_data
 
 # %%
 get_ipython().run_line_magic('load_ext', 'autoreload')
