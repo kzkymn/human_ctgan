@@ -133,3 +133,6 @@ dmypy.json
 
 # PyTorch
 *.pth
+
+# misc
+*.csv
