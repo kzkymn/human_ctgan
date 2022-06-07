@@ -32,7 +32,7 @@ get_ipython().run_line_magic('autoreload', '2')
 synth_sample_size = 200
 feedback_synth_sample_size = 100
 r = 2
-sigma = 1
+sigma = 10
 hctgan_path = './checkpoint/htcgan_test.pth'
 feedback_path = './output/feedbacks_test.csv'
 feedback_colname = 'feedback'
@@ -52,6 +52,7 @@ def get_feedback_function_by_knn(knn):
 
 # %%
 X, y = load_iris(return_X_y=True, as_frame=True)
+X = X[['sepal length (cm)', 'sepal width (cm)']]
 unique_y_labels_num = len(y.unique())
 
 X_train, X_test, y_train, y_test = train_test_split(
@@ -84,6 +85,7 @@ df_0.describe()
 df_1_or_2.describe()
 
 # %%
+"""
 train_criterion_of_df_0 = (df_0['sepal length (cm)'] < 4.8) & (
     df_0['petal length (cm)'] < 1.4)
 train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] < 5.8) & (
@@ -99,7 +101,23 @@ df_train = pd.concat([df_0_train, df_1_or_2_train])
 df_test = pd.concat([df_test, df_0_test, df_1_or_2_test])
 
 del df_0, df_1_or_2, df_0_train, df_1_or_2_train
+"""
 
+train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 4.8) & (
+    df_0['sepal width (cm)'] >= 3.5)
+train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 6.0) & (
+    df_1_or_2['sepal length (cm)'] <= 6.5)
+
+df_0_train = df_0[train_criterion_of_df_0]
+df_0_test = df_0[~train_criterion_of_df_0]
+
+df_1_or_2_train = df_1_or_2[train_criterion_of_df_1_or_2]
+df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
+
+df_train = pd.concat([df_0_train, df_1_or_2_train])
+df_test = pd.concat([df_test, df_0_test, df_1_or_2_test])
+
+del df_0, df_1_or_2, df_0_train, df_1_or_2_train
 
 # %%
 df_train.describe()
