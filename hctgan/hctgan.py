@@ -112,8 +112,7 @@ class HCTGANSynthesizer(CTGANSynthesizer):
 
         data_tensor = torch.cat(data, dim=0)
         data_tensor = data_tensor[:n]
-        data_tensor = data_tensor.clone().cpu()
-        # data_tensor = data_tensor.cpu()
+        data_tensor = data_tensor.cpu()
 
         return data_tensor
 
