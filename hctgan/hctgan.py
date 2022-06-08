@@ -129,7 +129,7 @@ class HCTGANSynthesizer(CTGANSynthesizer):
         # TODO: クラスタリングして、その中心の最近傍の摂動だけ返すオプションを実装
         # その時は返すクラスタ中心の数を指定する引数も追加
 
-        # TODO: 摂動を追加
+        # adding perturbations
         result_vector_list = []
         mn_perturbation_list = []
         for _, row in enumerate(raw_data_tensor):

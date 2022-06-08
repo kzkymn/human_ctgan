@@ -171,7 +171,7 @@ def calc_roc_using_the_result_of_fitting_and_evaluating_model(df_train, df_synth
 # %%
 seed_tuple = create_seed_tuple()
 
-hctgan = HCTGANSynthesizer()
+hctgan = HCTGANSynthesizer(epochs=3000)
 hctgan.random_states = seed_tuple
 hctgan.fit(df_train,
            discrete_columns=discrete_columns)
@@ -250,7 +250,7 @@ for i in range(20):
         current_sigma /= 2
 
 # %%
-final_synthed_df = hctgan.sample(synth_sample_size)
+intermediate_synthed_df = hctgan.sample(synth_sample_size)
 
 print('=================================')
 print('=== Result of first 20 epochs ===')
@@ -259,7 +259,7 @@ hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(
     df_train, hctgan)
 final_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-    df_train, final_synthed_df, X_test, y_test, unique_y_labels_num)
+    df_train, intermediate_synthed_df, X_test, y_test, unique_y_labels_num)
 roc_auc_score_list.append(final_roc_auc_score)
 
 # %%
@@ -270,7 +270,7 @@ print('current roc_auc_score:', roc_auc_score_list[-1])
 first_synthed_df.describe()
 
 # %%
-final_synthed_df.describe()
+intermediate_synthed_df.describe()
 
 # %%
 df.describe()
