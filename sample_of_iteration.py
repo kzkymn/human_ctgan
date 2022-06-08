@@ -1,5 +1,6 @@
 # %%
 from functools import partial
+import warnings
 
 from IPython import get_ipython
 from sklearn.neighbors import KNeighborsClassifier
@@ -24,115 +25,95 @@ from util.feedback import create_feedback_by_knn_with_proba
 # %%
 get_ipython().run_line_magic('load_ext', 'autoreload')
 get_ipython().run_line_magic('autoreload', '2')
+warnings.filterwarnings('ignore')
 
 # %%[markdown]
-# Options
+# Settings
 
 # %%
-synth_sample_size = 200
-feedback_synth_sample_size = 100
-r = 2
-sigma = 10
-hctgan_path = './checkpoint/htcgan_test.pth'
-feedback_path = './output/feedbacks_test.csv'
-feedback_colname = 'feedback'
-target_colname = 'target'
+SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200
+SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
+PERTURBATION_PER_FEEDBACK_DATUM = 2
+PERTURBATION_SIGMA = 10
+HCTGAN_FILE_PATH = './checkpoint/htcgan_test.pth'
+FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
+FEEDBACK_COLNAME = 'feedback'
+TARGET_COLNAME = 'target'
+
+# %%
+# NOTE: If any of the explanatory or objective variables are categorical,
+# please include their names in this list.
+discrete_columns = [
+    TARGET_COLNAME
+]
+
 
 # %%
 
 
-def get_feedback_function_by_one_class_svm(one_class_svm):
+def get_feedback_function_by_one_class_svm(df):
+    one_class_svm = OneClassSVM().fit(df)
     return partial(create_feedback_by_one_class_svm, one_class_svm=one_class_svm)
 
 
-def get_feedback_function_by_knn(knn):
+def get_feedback_function_by_knn(df, target_colname='target'):
+    X = df.drop(columns=target_colname)
+    y = df[target_colname]
+
+    knn = KNeighborsClassifier().fit(X, y)
     return partial(create_feedback_by_knn, knn=knn)
     # return partial(create_feedback_by_knn_with_proba, knn=knn)
 
 
 # %%
-X, y = load_iris(return_X_y=True, as_frame=True)
-X = X[['sepal length (cm)', 'sepal width (cm)']]
-unique_y_labels_num = len(y.unique())
+def get_iris_dataframe(target_colname='target'):
+    X, y = load_iris(return_X_y=True, as_frame=True)
+    X = X[['sepal length (cm)', 'sepal width (cm)']]
+    df = X.copy()
+    df[target_colname] = y.copy()
+    return df
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.1, random_state=42)
 
-df = X.copy()
-df[target_colname] = y.copy()
-df_train = X_train.copy()
-df_train[target_colname] = y_train
-df_test = X_test.copy()
-df_test[target_colname] = y_test
+def prepare_train_and_test(df,
+                           target_colname='target'):
+    X = df.drop(columns=target_colname)
+    y = df[target_colname]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.1, random_state=42)
 
-# %%
+    df_train = X_train.copy()
+    df_train[target_colname] = y_train
+    df_test = X_test.copy()
+    df_test[target_colname] = y_test
+    df_0 = df_train[df_train[target_colname] == 0]
+    df_1_or_2 = df_train[~(df_train[target_colname] == 0)]
 
-# feedback_function = create_random_feedback
-# feedback_function = create_wrong_feedback
-# one_class_svm = OneClassSVM().fit(df)
-# feedback_function = get_feedback_function_by_one_class_svm(one_class_svm)
-knn = KNeighborsClassifier().fit(X, y)
-feedback_function = get_feedback_function_by_knn(knn)
+    train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 4.8) & (
+        df_0['sepal width (cm)'] >= 3.5)
+    train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 6.0) & (
+        df_1_or_2['sepal length (cm)'] <= 6.5)
 
-# %%
-df_0 = df_train[df_train[target_colname] == 0]
-df_1_or_2 = df_train[~(df_train[target_colname] == 0)]
+    df_0_train = df_0[train_criterion_of_df_0]
+    df_0_test = df_0[~train_criterion_of_df_0]
 
-# %%
-df_0.describe()
+    df_1_or_2_train = df_1_or_2[train_criterion_of_df_1_or_2]
+    df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
 
-# %%
-df_1_or_2.describe()
+    df_train = pd.concat([df_0_train, df_1_or_2_train])
+    df_test = pd.concat([df_test, df_0_test, df_1_or_2_test])
 
-# %%
-"""
-train_criterion_of_df_0 = (df_0['sepal length (cm)'] < 4.8) & (
-    df_0['petal length (cm)'] < 1.4)
-train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] < 5.8) & (
-    df_1_or_2['petal length (cm)'] > 4.4)
+    return df_train, df_test
 
-df_0_train = df_0[train_criterion_of_df_0]
-df_0_test = df_0[~train_criterion_of_df_0]
 
-df_1_or_2_train = df_1_or_2[train_criterion_of_df_1_or_2]
-df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
-
-df_train = pd.concat([df_0_train, df_1_or_2_train])
-df_test = pd.concat([df_test, df_0_test, df_1_or_2_test])
-
-del df_0, df_1_or_2, df_0_train, df_1_or_2_train
-"""
-
-train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 4.8) & (
-    df_0['sepal width (cm)'] >= 3.5)
-train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 6.0) & (
-    df_1_or_2['sepal length (cm)'] <= 6.5)
-
-df_0_train = df_0[train_criterion_of_df_0]
-df_0_test = df_0[~train_criterion_of_df_0]
-
-df_1_or_2_train = df_1_or_2[train_criterion_of_df_1_or_2]
-df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
-
-df_train = pd.concat([df_0_train, df_1_or_2_train])
-df_test = pd.concat([df_test, df_0_test, df_1_or_2_test])
-
-del df_0, df_1_or_2, df_0_train, df_1_or_2_train
+df = get_iris_dataframe(target_colname=TARGET_COLNAME)
+df_train, df_test = prepare_train_and_test(df,
+                                           target_colname=TARGET_COLNAME)
 
 # %%
 df_train.describe()
 
 # %%
 df_test.describe()
-
-# %%
-X_test = df_test.drop(columns=target_colname)
-y_test = df_test[target_colname]
-
-# %%
-discrete_columns = [
-    target_colname
-]
 
 # %%
 
@@ -150,7 +131,8 @@ def print_roc_auc_score(y_true, y_pred_proba, unique_y_labels_num):
     return auc_score
 
 
-def create_classifier_with_synthed_data(df_train, df_synthed):
+def create_classifier_with_synthed_data(df_train, df_synthed,
+                                        target_colname='target'):
     clf = XGBClassifier()
     if df_synthed is not None:
         tmp_df = pd.concat([df_train, df_synthed])
@@ -162,8 +144,12 @@ def create_classifier_with_synthed_data(df_train, df_synthed):
     return clf
 
 
-def calc_roc_using_the_result_of_fitting_and_evaluating_model(df_train, df_synthed, X_test, y_test, unique_y_labels_num):
-    clf = create_classifier_with_synthed_data(df_train, df_synthed)
+def calc_roc_using_the_result_of_fitting_and_evaluating_model(df_train, df_synthed, df_test, unique_y_labels_num,
+                                                              target_colname='target'):
+    X_test = df_test.drop(columns=target_colname)
+    y_test = df_test[target_colname]
+    clf = create_classifier_with_synthed_data(
+        df_train, df_synthed, target_colname=target_colname)
     y_pred_proba = clf.predict_proba(X_test)
     return print_roc_auc_score(y_test, y_pred_proba, unique_y_labels_num)
 
@@ -176,16 +162,19 @@ hctgan.random_states = seed_tuple
 hctgan.fit(df_train,
            discrete_columns=discrete_columns)
 hctgan.random_states = seed_tuple
-first_synthed_df = hctgan.sample(synth_sample_size)
+first_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
 
 # %%
+unique_y_labels_num = len(df[TARGET_COLNAME].unique())
+
 print('================================')
 print('== Training only original data==')
 print('================================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(df_train, hctgan)
 original_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-    df_train, None, X_test, y_test, unique_y_labels_num)
+    df_train, None, df_test, unique_y_labels_num,
+    target_colname=TARGET_COLNAME)
 
 # %%
 roc_auc_score_list = []
@@ -198,33 +187,42 @@ print('================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(df_train, hctgan)
 original_and_ctgan_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-    df_train, first_synthed_df, X_test, y_test, unique_y_labels_num)
+    df_train, first_synthed_df, df_test, unique_y_labels_num,
+    target_colname=TARGET_COLNAME)
 
 # %%
 roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
 
 # %%
-current_sigma = sigma
-for i in range(20):
+feedback_function = get_feedback_function_by_one_class_svm(df)
+# feedback_function = create_random_feedback
+# feedback_function = create_wrong_feedback
+
+# feedback_function = get_feedback_function_by_knn(df)
+
+# %%
+current_sigma = PERTURBATION_SIGMA
+
+for i in range(1, 21):
     hctgan.random_states = None
-    hctgan.save(path=hctgan_path)
+    hctgan.save(path=HCTGAN_FILE_PATH)
 
     hctgan.random_states = seed_tuple
-    hctgan.create_feedback_data_csv(csv_path=feedback_path,
-                                    n=feedback_synth_sample_size,
-                                    r=r,
+    hctgan.create_feedback_data_csv(csv_path=FEEDBACK_CSV_PATH,
+                                    n=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                                    r=PERTURBATION_PER_FEEDBACK_DATUM,
                                     sigma=current_sigma,
-                                    target_colname=feedback_colname)
+                                    target_colname=FEEDBACK_COLNAME)
 
-    feedback_df = pd.read_csv(feedback_path)
-    data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
+    feedback_df = pd.read_csv(FEEDBACK_CSV_PATH)
+    data_for_feedback_orig = feedback_df.drop(columns=FEEDBACK_COLNAME)
     feedback_probs = feedback_function(data_for_feedback_orig)
 
     # hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(path=hctgan_path)
 
     hctgan.random_states = seed_tuple
-    sampled_data_tensor, data_for_feedback, perturbations = hctgan.sample_for_human_evaluation(n=feedback_synth_sample_size,
-                                                                                               r=r,
+    sampled_data_tensor, data_for_feedback, perturbations = hctgan.sample_for_human_evaluation(n=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                                                                                               r=PERTURBATION_PER_FEEDBACK_DATUM,
                                                                                                sigma=current_sigma)
 
     np.testing.assert_array_almost_equal(
@@ -238,31 +236,23 @@ for i in range(20):
 
     print(f'=== i {i: 03d} ===')
     hctgan.random_states = seed_tuple
-    synthed_df = hctgan.sample(synth_sample_size)
+    synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
     hctgan.random_states = seed_tuple
-    # print_diff_between_original_and_generated_data(
-    #     df_train, hctgan, show_original_data_info=False)
     intermediate_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-        df_train, synthed_df, X_test, y_test, unique_y_labels_num)
+        df_train, synthed_df, df_test, unique_y_labels_num,
+        target_colname=TARGET_COLNAME)
     roc_auc_score_list.append(intermediate_roc_auc_score)
 
     if i != 0 and i % 5 == 0:
         current_sigma /= 2
 
 # %%
-intermediate_synthed_df = hctgan.sample(synth_sample_size)
-
 print('=================================')
 print('=== Result of first 20 epochs ===')
 print('=================================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(
     df_train, hctgan)
-final_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-    df_train, intermediate_synthed_df, X_test, y_test, unique_y_labels_num)
-roc_auc_score_list.append(final_roc_auc_score)
-
-# %%
 print('original roc_auc_score:', roc_auc_score_list[0])
 print('current roc_auc_score:', roc_auc_score_list[-1])
 
@@ -270,33 +260,34 @@ print('current roc_auc_score:', roc_auc_score_list[-1])
 first_synthed_df.describe()
 
 # %%
+intermediate_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
 intermediate_synthed_df.describe()
 
 # %%
 df.describe()
 
 # %%
-for i in range(20, 100):
+for i in range(21, 100):
     hctgan.random_states = None
-    hctgan.save(path=hctgan_path)
+    hctgan.save(path=HCTGAN_FILE_PATH)
 
     hctgan.random_states = seed_tuple
-    hctgan.create_feedback_data_csv(csv_path=feedback_path,
-                                    n=feedback_synth_sample_size,
-                                    r=r,
-                                    sigma=sigma,
-                                    target_colname=feedback_colname)
+    hctgan.create_feedback_data_csv(csv_path=FEEDBACK_CSV_PATH,
+                                    n=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                                    r=PERTURBATION_PER_FEEDBACK_DATUM,
+                                    sigma=PERTURBATION_SIGMA,
+                                    target_colname=FEEDBACK_COLNAME)
 
-    feedback_df = pd.read_csv(feedback_path)
-    data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
+    feedback_df = pd.read_csv(FEEDBACK_CSV_PATH)
+    data_for_feedback_orig = feedback_df.drop(columns=FEEDBACK_COLNAME)
     feedback_probs = feedback_function(data_for_feedback_orig)
 
-    hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(path=hctgan_path)
+    hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(path=HCTGAN_FILE_PATH)
 
     hctgan.random_states = seed_tuple
-    sampled_data_tensor, data_for_feedback, perturbations = hctgan.sample_for_human_evaluation(n=feedback_synth_sample_size,
-                                                                                               r=r,
-                                                                                               sigma=sigma)
+    sampled_data_tensor, data_for_feedback, perturbations = hctgan.sample_for_human_evaluation(n=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                                                                                               r=PERTURBATION_PER_FEEDBACK_DATUM,
+                                                                                               sigma=PERTURBATION_SIGMA)
 
     np.testing.assert_array_almost_equal(
         data_for_feedback_orig, data_for_feedback)
@@ -305,20 +296,17 @@ for i in range(20, 100):
     hctgan.fit_to_feedback(sampled_data_tensor,
                            feedback_probs,
                            perturbations,
-                           sigma=sigma)
+                           sigma=PERTURBATION_SIGMA)
 
     print(f'=== i {i: 03d} ===')
     hctgan.random_states = seed_tuple
-    synthed_df = hctgan.sample(synth_sample_size)
+    synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
     hctgan.random_states = seed_tuple
     # print_diff_between_original_and_generated_data(
     #     df_train, hctgan, show_original_data_info=False)
     intermediate_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-        df_train, synthed_df, X_test, y_test, unique_y_labels_num)
+        df_train, synthed_df, df_test, unique_y_labels_num)
     roc_auc_score_list.append(intermediate_roc_auc_score)
-
-# %%
-final_synthed_df = hctgan.sample(synth_sample_size)
 
 print('=============')
 print('=== Final ===')
@@ -326,9 +314,6 @@ print('=============')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(
     df_train, hctgan)
-final_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-    df_train, final_synthed_df, X_test, y_test, unique_y_labels_num)
-roc_auc_score_list.append(final_roc_auc_score)
 
 # %%
 print('original roc_auc_score:', roc_auc_score_list[0])
@@ -338,6 +323,7 @@ print('final roc_auc_score:', roc_auc_score_list[-1])
 first_synthed_df.describe()
 
 # %%
+final_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
 final_synthed_df.describe()
 
 # %%
@@ -349,7 +335,7 @@ df.describe()
 # %%
 print(feedback_function)
 df_result = pd.DataFrame()
-df_result['epoch'] = list(range(1, len(roc_auc_score_list)+1))
+df_result['epoch'] = list(range(len(roc_auc_score_list)))
 df_result['roc_auc_score'] = roc_auc_score_list
 df_result['baseline'] = roc_auc_score_list[0]
 ax1 = df_result.plot('epoch', 'roc_auc_score')
