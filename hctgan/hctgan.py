@@ -1,4 +1,30 @@
+# Some methods in this code are derived from sdv-dev/CTGAN. Below is the license of it.
+#
+# MIT License
+#
+# Copyright (c) 2019, MIT Data To AI Lab
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
 from copy import deepcopy
+import pickle
 from ctgan import CTGANSynthesizer
 from ctgan.synthesizers.base import random_state
 
@@ -7,14 +33,35 @@ import torch
 from torch import optim
 
 
+class InnerConditions():
+    def __init__(self,
+                 sample_size_of_feedback_data,
+                 perturbation_per_feedback_datum,
+                 perturbation_sigma,
+                 condition_column,
+                 condition_value):
+        self.sample_size_of_feedback_data = sample_size_of_feedback_data
+        self.perturbation_per_feedback_datum = perturbation_per_feedback_datum
+        self.perturbation_sigma = perturbation_sigma
+        self.condition_column = condition_column
+        self.condition_value = condition_value
+
+
 class HCTGANSynthesizer(CTGANSynthesizer):
     """CTGAN with HumanGAN
     """
 
-    def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
+    def __init__(self,
+                 sample_size_of_feedback_data,
+                 perturbation_per_feedback_datum=5,
+                 perturbation_sigma=0.01,
+                 condition_column=None,
+                 condition_value=None,
+                 embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True,
+                 ):
         super().__init__(embedding_dim=embedding_dim, generator_dim=generator_dim,
                          discriminator_dim=discriminator_dim,
                          generator_lr=generator_lr, generator_decay=generator_decay,
@@ -23,6 +70,11 @@ class HCTGANSynthesizer(CTGANSynthesizer):
                          batch_size=batch_size, discriminator_steps=discriminator_steps,
                          log_frequency=log_frequency, verbose=verbose,
                          epochs=epochs, pac=pac, cuda=cuda)
+        self._set_inner_conditions(sample_size_of_feedback_data=sample_size_of_feedback_data,
+                                   perturbation_per_feedback_datum=perturbation_per_feedback_datum,
+                                   perturbation_sigma=perturbation_sigma,
+                                   condition_column=condition_column,
+                                   condition_value=condition_value)
 
     @random_state
     def fit(self, train_data, discrete_columns=(), epochs=None):
@@ -31,17 +83,29 @@ class HCTGANSynthesizer(CTGANSynthesizer):
                     epochs=epochs)
         return self
 
+    def _set_inner_conditions(self,
+                              sample_size_of_feedback_data=None,
+                              perturbation_per_feedback_datum=None,
+                              perturbation_sigma=None,
+                              condition_column=None,
+                              condition_value=None):
+        self.sample_size_of_feedback_data = sample_size_of_feedback_data
+        self.perturbation_per_feedback_datum = perturbation_per_feedback_datum
+        self.perturbation_sigma = perturbation_sigma
+        self.condition_column = condition_column
+        self.condition_value = condition_value
+
     @random_state
     def fit_to_feedback(self,
-                        x,
-                        feedback_probs,
-                        perturbations,
-                        condition_column=None,
-                        condition_value=None,
-                        n=20,
-                        r=5,
-                        sigma=0.01,
+                        data_for_feedback_orig,
+                        feedback_probs
                         ):
+
+        x, data_for_feedback, perturbations = self._sample_for_human_evaluation()
+
+        np.testing.assert_array_almost_equal(
+            data_for_feedback_orig, data_for_feedback)
+
         N = x.shape[0]
         feedback_sample_size = feedback_probs.shape[0]
 
@@ -62,7 +126,8 @@ class HCTGANSynthesizer(CTGANSynthesizer):
                 D_xnr = reshaped_feedback_probs[n, r, 0] - \
                     reshaped_feedback_probs[n, r, 1]
                 sum_list.append(D_xnr * perturbation_xnr)
-            grad_of_xn = np.sum(sum_list, axis=0) / (2*sigma**2*R)
+            grad_of_xn = np.sum(sum_list, axis=0) / \
+                (2*self.perturbation_sigma**2*R)
             grad_list.append(grad_of_xn)
 
         x_for_bw = x.to(self._device)
@@ -117,14 +182,11 @@ class HCTGANSynthesizer(CTGANSynthesizer):
         return data_tensor
 
     @random_state
-    def sample_for_human_evaluation(self, n,
-                                    condition_column=None,
-                                    condition_value=None,
-                                    r=5,
-                                    sigma=0.01):
+    def _sample_for_human_evaluation(self):
+
         raw_data_tensor = self._sample_as_tensor(
-            n, condition_column=condition_column,
-            condition_value=condition_value)
+            self.sample_size_of_feedback_data, condition_column=self.condition_column,
+            condition_value=self.condition_value)
 
         # TODO: クラスタリングして、その中心の最近傍の摂動だけ返すオプションを実装
         # その時は返すクラスタ中心の数を指定する引数も追加
@@ -133,10 +195,10 @@ class HCTGANSynthesizer(CTGANSynthesizer):
         result_vector_list = []
         mn_perturbation_list = []
         for _, row in enumerate(raw_data_tensor):
-            for _ in range(r):
+            for _ in range(self.perturbation_per_feedback_datum):
                 col_num = raw_data_tensor.shape[1]
                 mn_distribution_vector = np.random.normal(
-                    loc=0, scale=sigma, size=col_num)
+                    loc=0, scale=self.perturbation_sigma, size=col_num)
 
                 new_row_added_delta = row.detach().numpy()
                 new_row_subtracted_delta = deepcopy(new_row_added_delta)
@@ -153,7 +215,7 @@ class HCTGANSynthesizer(CTGANSynthesizer):
         data = fakeact.numpy()
         perturbations = np.vstack(mn_perturbation_list)
         perturbations = perturbations.reshape(
-            (n, r, perturbations.shape[1]))
+            (self.sample_size_of_feedback_data, self.perturbation_per_feedback_datum, perturbations.shape[1]))
 
         return raw_data_tensor, self._transformer.inverse_transform(data), perturbations
 
@@ -168,18 +230,53 @@ class HCTGANSynthesizer(CTGANSynthesizer):
     @random_state
     def create_feedback_data_csv(self,
                                  csv_path,
-                                 n,
+                                 sample_size_of_feedback_data,
+                                 perturbation_per_feedback_datum=5,
+                                 perturbation_sigma=0.01,
                                  condition_column=None,
                                  condition_value=None,
-                                 r=5,
-                                 sigma=0.01,
                                  target_colname='feedback'):
-        _, data_for_feedback, _ = self.sample_for_human_evaluation(n=n,
-                                                                   condition_column=condition_column,
-                                                                   condition_value=condition_value,
-                                                                   r=r,
-                                                                   sigma=sigma)
+
+        self._set_inner_conditions(sample_size_of_feedback_data=sample_size_of_feedback_data,
+                                   perturbation_per_feedback_datum=perturbation_per_feedback_datum,
+                                   perturbation_sigma=perturbation_sigma,
+                                   condition_column=condition_column,
+                                   condition_value=condition_value)
+        _, data_for_feedback, _ = self._sample_for_human_evaluation()
 
         self._save_data_for_feedback(data_for_feedback=data_for_feedback,
                                      csv_path=csv_path,
                                      target_colname=target_colname)
+
+    def save_inner_conditions(self, path):
+        ic = InnerConditions(sample_size_of_feedback_data=self.sample_size_of_feedback_data,
+                             perturbation_per_feedback_datum=self.perturbation_per_feedback_datum,
+                             perturbation_sigma=self.perturbation_sigma,
+                             condition_column=self.condition_column,
+                             condition_value=self.condition_value)
+        with open(path, 'wb') as f:
+            pickle.dump(ic, f)
+
+    def save(self, path):
+        """Save the model in the passed `path`."""
+        device_backup = self._device
+        self.set_device(torch.device('cpu'))
+        torch.save(self, path+'.pth')
+        self.save_inner_conditions(path=path+'_inner_conditions.pickle')
+        self.set_device(device_backup)
+
+    @classmethod
+    def load(cls, path):
+        """Load the model stored in the passed `path`."""
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        model: HCTGANSynthesizer = torch.load(path+'.pth')
+        with open(path+'_inner_conditions.pickle', 'rb') as f:
+            ic: InnerConditions = pickle.load(f)
+            model._set_inner_conditions(sample_size_of_feedback_data=ic.sample_size_of_feedback_data,
+                                        perturbation_per_feedback_datum=ic.perturbation_per_feedback_datum,
+                                        perturbation_sigma=ic.perturbation_sigma,
+                                        condition_column=ic.condition_column,
+                                        condition_value=ic.condition_value
+                                        )
+        model.set_device(device)
+        return model

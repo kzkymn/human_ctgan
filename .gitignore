@@ -134,6 +134,9 @@ dmypy.json
 # PyTorch
 *.pth
 
+# Python
+*.pickle
+
 # misc
 *.csv
 *.png

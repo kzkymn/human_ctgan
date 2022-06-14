@@ -36,7 +36,7 @@ SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200
 SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
 PERTURBATION_PER_FEEDBACK_DATUM = 2
 PERTURBATION_SIGMA = 10
-HCTGAN_FILE_PATH = './checkpoint/htcgan_test.pth'
+HCTGAN_FILE_PATH = './checkpoint/htcgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
 FEEDBACK_COLNAME = 'feedback'
 TARGET_COLNAME = 'target'
@@ -161,7 +161,10 @@ def calc_roc_using_the_result_of_fitting_and_evaluating_model(df_train, df_synth
 # %%
 seed_tuple = create_seed_tuple()
 
-hctgan = HCTGANSynthesizer(epochs=3000)
+hctgan = HCTGANSynthesizer(sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                           perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
+                           perturbation_sigma=PERTURBATION_SIGMA,
+                           epochs=3000)
 hctgan.random_states = seed_tuple
 hctgan.fit(df_train,
            discrete_columns=discrete_columns)
@@ -227,31 +230,23 @@ def iterate_feedbacks(hctgan,
 
         hctgan.random_states = seed_tuple
         hctgan.create_feedback_data_csv(csv_path=feedback_csv_path,
-                                        n=sample_size_of_feedback_data,
-                                        r=perturbation_per_feedback_datum,
-                                        sigma=current_sigma,
+                                        sample_size_of_feedback_data=sample_size_of_feedback_data,
+                                        perturbation_per_feedback_datum=perturbation_per_feedback_datum,
+                                        perturbation_sigma=current_sigma,
                                         target_colname=feedback_colname)
 
         feedback_df = pd.read_csv(feedback_csv_path)
         data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
         feedback_probs = feedback_function(data_for_feedback_orig)
 
+        print('hctgan._n', hctgan.sample_size_of_feedback_data)
         hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
             path=hctgan_file_path)
+        print('hctgan._n', hctgan.sample_size_of_feedback_data)
 
         hctgan.random_states = seed_tuple
-        sampled_data_tensor, data_for_feedback, perturbations = hctgan.sample_for_human_evaluation(n=sample_size_of_feedback_data,
-                                                                                                   r=perturbation_per_feedback_datum,
-                                                                                                   sigma=current_sigma)
-
-        np.testing.assert_array_almost_equal(
-            data_for_feedback_orig, data_for_feedback)
-
-        hctgan.random_states = seed_tuple
-        hctgan.fit_to_feedback(sampled_data_tensor,
-                               feedback_probs,
-                               perturbations,
-                               sigma=current_sigma)
+        hctgan.fit_to_feedback(data_for_feedback_orig,
+                               feedback_probs)
 
         print(f'=== i {i: 03d} ===')
         hctgan.random_states = seed_tuple
