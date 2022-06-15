@@ -185,7 +185,7 @@ original_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_mod
 
 # %%
 roc_auc_score_list = []
-roc_auc_score_list.append(original_roc_auc_score)
+# roc_auc_score_list.append(original_roc_auc_score)
 
 # %%
 print('================')
@@ -239,10 +239,8 @@ def iterate_feedbacks(hctgan,
         data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
         feedback_probs = feedback_function(data_for_feedback_orig)
 
-        print('hctgan._n', hctgan.sample_size_of_feedback_data)
         hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
             path=hctgan_file_path)
-        print('hctgan._n', hctgan.sample_size_of_feedback_data)
 
         hctgan.random_states = seed_tuple
         hctgan.fit_to_feedback(data_for_feedback_orig,
@@ -279,9 +277,9 @@ current_sigma = iterate_feedbacks(hctgan,
                                   iter_n=2, start_n=1)
 
 # %%
-print('=================================')
-print('=== Result of first 2 epochs ====')
-print('=================================')
+print('===================================')
+print('=== Result of 2 epoch feedbacks ===')
+print('===================================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(
     df_train, hctgan)
@@ -298,43 +296,10 @@ intermediate_synthed_df.describe()
 # %%
 df.describe()
 
-# %%
-current_sigma = iterate_feedbacks(hctgan,
-                                  roc_auc_score_list,
-                                  sample_size_of_synthesized_data=SAMPLE_SIZE_OF_SYNTHESIZED_DATA,
-                                  sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
-                                  perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
-                                  perturbation_sigma=current_sigma,
-                                  hctgan_file_path=HCTGAN_FILE_PATH,
-                                  feedback_csv_path=FEEDBACK_CSV_PATH,
-                                  feedback_colname=FEEDBACK_COLNAME,
-                                  target_colname=TARGET_COLNAME,
-                                  iter_n=47, start_n=3)
-
-# %%
-print('=============')
-print('=== Final ===')
-print('=============')
-hctgan.random_states = seed_tuple
-print_diff_between_original_and_generated_data(
-    df_train, hctgan)
-
-# %%
-print('original roc_auc_score:', roc_auc_score_list[0])
-print('final roc_auc_score:', roc_auc_score_list[-1])
-
-# %%
-first_synthed_df.describe()
-
-# %%
-final_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
-final_synthed_df.describe()
-
-# %%
-df.describe()
-
 # %% [markdown]
 # roc auc score in each epoch
+#
+# Epoch 0 is the result of the training data and CTGAN sythesized data.
 
 # %%
 print(feedback_function)
