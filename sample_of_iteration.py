@@ -225,7 +225,6 @@ def iterate_feedbacks(hctgan,
     end_n = start_n + iter_n
 
     for i in range(start_n, end_n):
-        hctgan.random_states = None
         hctgan.save(path=hctgan_file_path)
 
         hctgan.random_states = seed_tuple
@@ -290,6 +289,7 @@ print('current roc_auc_score:', roc_auc_score_list[-1])
 first_synthed_df.describe()
 
 # %%
+hctgan.random_states = seed_tuple
 intermediate_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
 intermediate_synthed_df.describe()
 

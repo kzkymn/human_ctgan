@@ -259,11 +259,14 @@ class HCTGANSynthesizer(CTGANSynthesizer):
 
     def save(self, path):
         """Save the model in the passed `path`."""
+        rs = self.random_states
         device_backup = self._device
+        self.random_states = None
         self.set_device(torch.device('cpu'))
         torch.save(self, path+'.pth')
         self.save_inner_conditions(path=path+'_inner_conditions.pickle')
         self.set_device(device_backup)
+        self.random_states = rs
 
     @classmethod
     def load(cls, path):
