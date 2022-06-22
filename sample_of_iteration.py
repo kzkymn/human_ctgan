@@ -20,6 +20,7 @@ from util import (create_random_feedback,
                   create_feedback_by_one_class_svm,
                   create_feedback_by_knn,
                   create_feedback_by_knn_with_proba,
+                  create_feedback_function_by_rule_base,
                   print_diff_between_original_and_generated_data)
 from util.feedback import create_feedback_by_knn_with_proba
 
@@ -32,10 +33,10 @@ warnings.filterwarnings('ignore')
 # Settings
 
 # %%
-SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200
+SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 2000
 SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
 PERTURBATION_PER_FEEDBACK_DATUM = 2
-PERTURBATION_SIGMA = 10
+PERTURBATION_SIGMA = 0.01
 HCTGAN_FILE_PATH = './checkpoint/htcgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
 FEEDBACK_COLNAME = 'feedback'
@@ -62,11 +63,25 @@ def get_feedback_function_by_knn(df, target_colname='target'):
     y = df[target_colname]
 
     knn = KNeighborsClassifier().fit(X, y)
-    return partial(create_feedback_by_knn, knn=knn)
-    # return partial(create_feedback_by_knn_with_proba, knn=knn)
+    # return partial(create_feedback_by_knn, knn=knn)
+    return partial(create_feedback_by_knn_with_proba, knn=knn)
 
+
+def get_feedback_function_by_rule_base(original_df, target_colname='target'):
+    _tmp_df = original_df.copy()
+    _tmp_df = _tmp_df[~((_tmp_df[target_colname] == 0) &
+                        (_tmp_df['sepal width (cm)'] < 2.5))]
+    max_df = _tmp_df.groupby(TARGET_COLNAME).max().reset_index(drop=False)
+    min_df = _tmp_df.groupby(TARGET_COLNAME).min().reset_index(drop=False)
+
+    return partial(create_feedback_function_by_rule_base,
+                   max_df=max_df,
+                   min_df=min_df,
+                   target_colname=target_colname)
 
 # %%
+
+
 def get_iris_dataframe(target_colname='target'):
     X, y = load_iris(return_X_y=True, as_frame=True)
     X = X[['sepal length (cm)', 'sepal width (cm)']]
@@ -80,7 +95,7 @@ def prepare_train_and_test(df,
     X = df.drop(columns=target_colname)
     y = df[target_colname]
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.1, random_state=42)
+        X, y, test_size=0.05, random_state=42)
 
     df_train = X_train.copy()
     df_train[target_colname] = y_train
@@ -89,19 +104,17 @@ def prepare_train_and_test(df,
     df_0 = df_train[df_train[target_colname] == 0]
     df_1_or_2 = df_train[~(df_train[target_colname] == 0)]
 
-    train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 4.8) & (
-        df_0['sepal width (cm)'] >= 3.5)
-    train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 6.0) & (
-        df_1_or_2['sepal length (cm)'] <= 6.5)
+    train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 5.0)
+    train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 6.5)
 
     df_0_train = df_0[train_criterion_of_df_0]
-    df_0_test = df_0[~train_criterion_of_df_0]
+    # df_0_test = df_0[~train_criterion_of_df_0]
 
     df_1_or_2_train = df_1_or_2[train_criterion_of_df_1_or_2]
-    df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
+    # df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
 
     df_train = pd.concat([df_0_train, df_1_or_2_train])
-    df_test = pd.concat([df_test, df_0_test, df_1_or_2_test])
+    df_test = df
 
     return df_train, df_test
 
@@ -123,12 +136,11 @@ def create_seed_tuple(np_seed=333, torch_seed=333):
     return (np.random.RandomState(np_seed), torch.manual_seed(torch_seed))
 
 
-def print_roc_auc_score(y_true, y_pred_proba, unique_y_labels_num):
+def _calc_roc_auc_score(y_true, y_pred_proba, unique_y_labels_num):
     if unique_y_labels_num >= 3:
         auc_score = roc_auc_score(y_true, y_pred_proba, multi_class='ovr')
     else:
         auc_score = roc_auc_score(y_true, y_pred_proba)
-    print('roc_auc_score:', auc_score)
     return auc_score
 
 
@@ -145,17 +157,34 @@ def create_classifier_with_synthed_data(df_train, df_synthed,
     return clf
 
 
-def calc_roc_using_the_result_of_fitting_and_evaluating_model(df_train, df_synthed, df_test, unique_y_labels_num,
-                                                              target_colname='target',
-                                                              skip_rendering_graph=False):
+def calc_roc_auc_score(df_train, df_synthed, df_test, unique_y_labels_num,
+                       target_colname='target'):
+    clf = create_classifier_with_synthed_data(
+        df_train=df_train, df_synthed=df_synthed,
+        target_colname=target_colname)
     X_test = df_test.drop(columns=target_colname)
     y_test = df_test[target_colname]
-    clf = create_classifier_with_synthed_data(
-        df_train, df_synthed, target_colname=target_colname)
     y_pred_proba = clf.predict_proba(X_test)
-    if not skip_rendering_graph:
-        plot_decision_regions(X=X_test.values, y=y_test.values, clf=clf)
-    return print_roc_auc_score(y_test, y_pred_proba, unique_y_labels_num)
+
+    auc_score = _calc_roc_auc_score(y_test, y_pred_proba, unique_y_labels_num)
+    return auc_score
+
+
+def draw_decision_region(df_train, df_synthed, df_test,
+                         target_colname='target'):
+    clf = create_classifier_with_synthed_data(
+        df_train=df_train, df_synthed=df_synthed,
+        target_colname=target_colname)
+
+    X_test = df_test.drop(columns=target_colname)
+    y_test = df_test[target_colname]
+    ax1 = plot_decision_regions(X=X_test.values, y=y_test.values, clf=clf)
+    df_train_and_syn = pd.concat([df_train, df_synthed])
+    X_train_and_syn = df_train_and_syn.drop(columns=target_colname)
+    colnames = list(X_train_and_syn.columns)
+    X_train_and_syn.plot(colnames[0], colnames[1],
+                         kind='scatter', color='black',
+                         alpha=0.7, ax=ax1)
 
 
 # %%
@@ -179,9 +208,13 @@ print('== Training only original data==')
 print('================================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(df_train, hctgan)
-original_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
+original_roc_auc_score = calc_roc_auc_score(
     df_train, None, df_test, unique_y_labels_num,
     target_colname=TARGET_COLNAME)
+print('roc_auc_score:', original_roc_auc_score)
+
+# %%
+draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME)
 
 # %%
 roc_auc_score_list = []
@@ -193,9 +226,14 @@ print('== Only CTGAN ==')
 print('================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(df_train, hctgan)
-original_and_ctgan_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
+original_and_ctgan_roc_auc_score = calc_roc_auc_score(
     df_train, first_synthed_df, df_test, unique_y_labels_num,
     target_colname=TARGET_COLNAME)
+print('roc_auc_score:', original_and_ctgan_roc_auc_score)
+
+# %%
+draw_decision_region(df_train, first_synthed_df, df_test,
+                     target_colname=TARGET_COLNAME)
 
 # %%
 roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
@@ -203,6 +241,7 @@ roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
 # %%
 # feedback_function = get_feedback_function_by_one_class_svm(df)
 feedback_function = get_feedback_function_by_knn(df)
+# feedback_function = get_feedback_function_by_rule_base(df)
 # feedback_function = create_random_feedback
 # feedback_function = create_wrong_feedback
 
@@ -223,62 +262,80 @@ def iterate_feedbacks(hctgan,
                       iter_n=20):
     current_sigma = perturbation_sigma
     end_n = start_n + iter_n
+    last_synthed_df = None
+
+    copyed_hctgan = hctgan
+    copyed_hctgan.save(path=hctgan_file_path)
+    copyed_hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
+        path=hctgan_file_path)
 
     for i in range(start_n, end_n):
-        hctgan.save(path=hctgan_file_path)
+        is_current_sigma_halfed = False
+        if i != 0 and i % 1000 == 0:
+            current_sigma /= 2
+            is_current_sigma_halfed = True
 
-        hctgan.random_states = seed_tuple
-        hctgan.create_feedback_data_csv(csv_path=feedback_csv_path,
-                                        sample_size_of_feedback_data=sample_size_of_feedback_data,
-                                        perturbation_per_feedback_datum=perturbation_per_feedback_datum,
-                                        perturbation_sigma=current_sigma,
-                                        target_colname=feedback_colname)
+        copyed_hctgan.save(path=hctgan_file_path)
+
+        copyed_hctgan.random_states = seed_tuple
+        copyed_hctgan.create_feedback_data_csv(csv_path=feedback_csv_path,
+                                               sample_size_of_feedback_data=sample_size_of_feedback_data,
+                                               perturbation_per_feedback_datum=perturbation_per_feedback_datum,
+                                               perturbation_sigma=current_sigma,
+                                               target_colname=feedback_colname)
 
         feedback_df = pd.read_csv(feedback_csv_path)
         data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
         feedback_probs = feedback_function(data_for_feedback_orig)
+        feedback_df[feedback_colname] = feedback_probs
+        feedback_df.to_csv(
+            f'./output/debug_feedbacks_iter_{i}.csv', index=False)
 
-        hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
+        copyed_hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
             path=hctgan_file_path)
+        if is_current_sigma_halfed:
+            copyed_hctgan.perturbation_sigma = current_sigma
 
-        hctgan.random_states = seed_tuple
-        hctgan.fit_to_feedback(data_for_feedback_orig,
-                               feedback_probs)
+        copyed_hctgan.random_states = seed_tuple
+        copyed_hctgan.fit_to_feedback(data_for_feedback_orig,
+                                      feedback_probs)
 
         print(f'=== i {i: 03d} ===')
-        hctgan.random_states = seed_tuple
-        synthed_df = hctgan.sample(sample_size_of_synthesized_data)
-        hctgan.random_states = seed_tuple
-        intermediate_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
+        copyed_hctgan.random_states = seed_tuple
+        synthed_df = copyed_hctgan.sample(sample_size_of_synthesized_data)
+        last_synthed_df = synthed_df
+        intermediate_roc_auc_score = calc_roc_auc_score(
             df_train, synthed_df, df_test, unique_y_labels_num,
-            target_colname=target_colname,
-            skip_rendering_graph=True)
+            target_colname=target_colname)
+        print('roc_auc_score:', intermediate_roc_auc_score)
         roc_auc_score_list.append(intermediate_roc_auc_score)
 
-    intermediate_roc_auc_score = calc_roc_using_the_result_of_fitting_and_evaluating_model(
-        df_train, synthed_df, df_test, unique_y_labels_num,
-        target_colname=target_colname)
+    if last_synthed_df is not None:
+        draw_decision_region(df_train, last_synthed_df, df_test,
+                             target_colname=TARGET_COLNAME)
 
-    return current_sigma
+    print(last_synthed_df.describe())
 
+    return copyed_hctgan
 
-# %%
-current_sigma = iterate_feedbacks(hctgan,
-                                  roc_auc_score_list,
-                                  sample_size_of_synthesized_data=SAMPLE_SIZE_OF_SYNTHESIZED_DATA,
-                                  sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
-                                  perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
-                                  perturbation_sigma=PERTURBATION_SIGMA,
-                                  hctgan_file_path=HCTGAN_FILE_PATH,
-                                  feedback_csv_path=FEEDBACK_CSV_PATH,
-                                  feedback_colname=FEEDBACK_COLNAME,
-                                  target_colname=TARGET_COLNAME,
-                                  iter_n=2, start_n=1)
 
 # %%
-print('===================================')
-print('=== Result of 2 epoch feedbacks ===')
-print('===================================')
+hctgan = iterate_feedbacks(hctgan,
+                           roc_auc_score_list,
+                           sample_size_of_synthesized_data=SAMPLE_SIZE_OF_SYNTHESIZED_DATA,
+                           sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                           perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
+                           perturbation_sigma=PERTURBATION_SIGMA,
+                           hctgan_file_path=HCTGAN_FILE_PATH,
+                           feedback_csv_path=FEEDBACK_CSV_PATH,
+                           feedback_colname=FEEDBACK_COLNAME,
+                           target_colname=TARGET_COLNAME,
+                           iter_n=10, start_n=1)
+
+# %%
+print('===============================')
+print('=== Result of the feedbacks ===')
+print('===============================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(
     df_train, hctgan)
@@ -291,7 +348,9 @@ first_synthed_df.describe()
 # %%
 hctgan.random_states = seed_tuple
 intermediate_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
+intermediate_synthed_df.to_csv('debug.csv', index=False)
 intermediate_synthed_df.describe()
+
 
 # %%
 df.describe()
