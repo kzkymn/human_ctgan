@@ -31,6 +31,7 @@ from ctgan.synthesizers.base import random_state
 import numpy as np
 import torch
 from torch import optim
+# from torchviz import make_dot
 
 
 class InnerConditions():
@@ -103,6 +104,10 @@ class HCTGANSynthesizer(CTGANSynthesizer):
 
         x, data_for_feedback, perturbations = self._sample_for_human_evaluation()
 
+        # image = make_dot(x, params=dict(self._generator.named_parameters()))
+        # image.format = "png"
+        # image.render("NeuralNet")
+
         np.testing.assert_array_almost_equal(
             data_for_feedback_orig, data_for_feedback)
 
@@ -110,6 +115,9 @@ class HCTGANSynthesizer(CTGANSynthesizer):
         feedback_sample_size = feedback_probs.shape[0]
 
         R = int(feedback_sample_size / (N * 2))
+        if R != self.perturbation_per_feedback_datum:
+            raise ValueError(
+                'Internal Error: The number of perturbation per one sample is not same as self.perturbation_per_feedback_datum.')
 
         reshaped_feedback_probs = feedback_probs.reshape((N, R, 2))
 
