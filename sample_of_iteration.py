@@ -329,6 +329,10 @@ def iterate_feedbacks(hctgan,
                                                perturbation_sigma=current_sigma,
                                                target_colname=feedback_colname)
 
+        # NOTE: Originally, a CSV file would be read here, with human feedback
+        # of the data evaluation values (i.e. probability of authenticity).
+        # However, since that is not available now, the evaluation values
+        # obtained by the classifier (e.g. KNN) are given instead.
         feedback_df = pd.read_csv(feedback_csv_path)
         data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
         feedback_probs = feedback_function(data_for_feedback_orig)
