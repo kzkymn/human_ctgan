@@ -30,17 +30,23 @@ get_ipython().run_line_magic('autoreload', '2')
 warnings.filterwarnings('ignore')
 
 # %%[markdown]
-# Settings
+# Human-CTGAN Settings
 
 # %%
-SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 2000
-SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
+SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 20000
+SAMPLE_SIZE_OF_FEEDBACK_DATA = 10
 PERTURBATION_PER_FEEDBACK_DATUM = 2
-PERTURBATION_SIGMA = 0.01
-HCTGAN_FILE_PATH = './checkpoint/htcgan_test'
+PERTURBATION_SIGMA = 2
+HCTGAN_FILE_PATH = './checkpoint/hctgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
 FEEDBACK_COLNAME = 'feedback'
 TARGET_COLNAME = 'target'
+
+# %% [markdown]
+# Test Settings
+
+# %%
+BOOTSTRAP_ITER_N = 100
 
 # %%
 # NOTE: If any of the explanatory or objective variables are categorical,
@@ -104,8 +110,10 @@ def prepare_train_and_test(df,
     df_0 = df_train[df_train[target_colname] == 0]
     df_1_or_2 = df_train[~(df_train[target_colname] == 0)]
 
-    train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 5.0)
-    train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 6.5)
+    train_criterion_of_df_0 = (df_0['sepal length (cm)'] >= 4.7) & (
+        df_0['sepal length (cm)'] <= 5.2)
+    train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 5.9) & (
+        df_1_or_2['sepal length (cm)'] <= 6.6)
 
     df_0_train = df_0[train_criterion_of_df_0]
     # df_0_test = df_0[~train_criterion_of_df_0]
@@ -170,6 +178,31 @@ def calc_roc_auc_score(df_train, df_synthed, df_test, unique_y_labels_num,
     return auc_score
 
 
+def calc_conf_interval_of_auc_by_bootstrapping(hctgan,
+                                               df_train,
+                                               seed_tuple,
+                                               sample_size_of_synthesized_data,
+                                               target_colname,
+                                               iter_n=10,
+                                               percentage_of_confidence_interval=0.95):
+    res_list = []
+    hctgan.random_states = seed_tuple
+    for _ in range(iter_n):
+        df_synthed = hctgan.sample(sample_size_of_synthesized_data)
+        intermediate_roc_auc_score = calc_roc_auc_score(
+            df_train, df_synthed, df_test, unique_y_labels_num,
+            target_colname=target_colname)
+        res_list.append(intermediate_roc_auc_score)
+
+    average_score = np.average(res_list)
+    conf_interval_min = np.quantile(a=res_list,
+                                    q=1-percentage_of_confidence_interval)
+    conf_interval_max = np.quantile(a=res_list,
+                                    q=percentage_of_confidence_interval)
+
+    return average_score, conf_interval_min, conf_interval_max
+
+
 def draw_decision_region(df_train, df_synthed, df_test,
                          target_colname='target'):
     clf = create_classifier_with_synthed_data(
@@ -184,7 +217,7 @@ def draw_decision_region(df_train, df_synthed, df_test,
     colnames = list(X_train_and_syn.columns)
     X_train_and_syn.plot(colnames[0], colnames[1],
                          kind='scatter', color='black',
-                         alpha=0.7, ax=ax1)
+                         alpha=0.5, ax=ax1)
 
 
 # %%
@@ -218,7 +251,8 @@ draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME)
 
 # %%
 roc_auc_score_list = []
-# roc_auc_score_list.append(original_roc_auc_score)
+roc_auc_score_lower_list = []
+roc_auc_score_upper_list = []
 
 # %%
 print('================')
@@ -226,9 +260,16 @@ print('== Only CTGAN ==')
 print('================')
 hctgan.random_states = seed_tuple
 print_diff_between_original_and_generated_data(df_train, hctgan)
-original_and_ctgan_roc_auc_score = calc_roc_auc_score(
-    df_train, first_synthed_df, df_test, unique_y_labels_num,
-    target_colname=TARGET_COLNAME)
+original_and_ctgan_roc_auc_score, score_lower, score_upper = calc_conf_interval_of_auc_by_bootstrapping(hctgan,
+                                                                                                        df_train,
+                                                                                                        seed_tuple,
+                                                                                                        sample_size_of_synthesized_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                                                                                                        target_colname=TARGET_COLNAME,
+                                                                                                        iter_n=BOOTSTRAP_ITER_N,
+                                                                                                        percentage_of_confidence_interval=0.95)
+roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
+roc_auc_score_lower_list.append(score_lower)
+roc_auc_score_upper_list.append(score_upper)
 print('roc_auc_score:', original_and_ctgan_roc_auc_score)
 
 # %%
@@ -236,7 +277,7 @@ draw_decision_region(df_train, first_synthed_df, df_test,
                      target_colname=TARGET_COLNAME)
 
 # %%
-roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
+
 
 # %%
 # feedback_function = get_feedback_function_by_one_class_svm(df)
@@ -249,7 +290,10 @@ feedback_function = get_feedback_function_by_knn(df)
 # %%
 
 def iterate_feedbacks(hctgan,
+                      df_train,
                       roc_auc_score_list,
+                      roc_auc_score_lower_list,
+                      roc_auc_score_upper_list,
                       sample_size_of_synthesized_data,
                       sample_size_of_feedback_data,
                       perturbation_per_feedback_datum,
@@ -257,12 +301,13 @@ def iterate_feedbacks(hctgan,
                       hctgan_file_path,
                       feedback_csv_path,
                       feedback_colname,
+                      seed_tuple,
                       target_colname='target',
                       start_n=1,
-                      iter_n=20):
+                      iter_n=20,
+                      bootstrap_iter_n=BOOTSTRAP_ITER_N):
     current_sigma = perturbation_sigma
     end_n = start_n + iter_n
-    last_synthed_df = None
 
     copyed_hctgan = hctgan
     copyed_hctgan.save(path=hctgan_file_path)
@@ -302,26 +347,27 @@ def iterate_feedbacks(hctgan,
 
         print(f'=== i {i: 03d} ===')
         copyed_hctgan.random_states = seed_tuple
-        synthed_df = copyed_hctgan.sample(sample_size_of_synthesized_data)
-        last_synthed_df = synthed_df
-        intermediate_roc_auc_score = calc_roc_auc_score(
-            df_train, synthed_df, df_test, unique_y_labels_num,
-            target_colname=target_colname)
+        intermediate_roc_auc_score, score_lower, score_upper = calc_conf_interval_of_auc_by_bootstrapping(copyed_hctgan,
+                                                                                                          df_train,
+                                                                                                          seed_tuple,
+                                                                                                          sample_size_of_synthesized_data,
+                                                                                                          target_colname,
+                                                                                                          iter_n=bootstrap_iter_n,
+                                                                                                          percentage_of_confidence_interval=0.95)
         print('roc_auc_score:', intermediate_roc_auc_score)
         roc_auc_score_list.append(intermediate_roc_auc_score)
-
-    if last_synthed_df is not None:
-        draw_decision_region(df_train, last_synthed_df, df_test,
-                             target_colname=TARGET_COLNAME)
-
-    print(last_synthed_df.describe())
+        roc_auc_score_lower_list.append(score_lower)
+        roc_auc_score_upper_list.append(score_upper)
 
     return copyed_hctgan
 
 
 # %%
 hctgan = iterate_feedbacks(hctgan,
-                           roc_auc_score_list,
+                           df_train,
+                           roc_auc_score_list=roc_auc_score_list,
+                           roc_auc_score_lower_list=roc_auc_score_lower_list,
+                           roc_auc_score_upper_list=roc_auc_score_upper_list,
                            sample_size_of_synthesized_data=SAMPLE_SIZE_OF_SYNTHESIZED_DATA,
                            sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
                            perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
@@ -329,8 +375,10 @@ hctgan = iterate_feedbacks(hctgan,
                            hctgan_file_path=HCTGAN_FILE_PATH,
                            feedback_csv_path=FEEDBACK_CSV_PATH,
                            feedback_colname=FEEDBACK_COLNAME,
+                           seed_tuple=seed_tuple,
                            target_colname=TARGET_COLNAME,
-                           iter_n=10, start_n=1)
+                           iter_n=2, start_n=1,
+                           bootstrap_iter_n=BOOTSTRAP_ITER_N)
 
 # %%
 print('===============================')
@@ -347,13 +395,16 @@ first_synthed_df.describe()
 
 # %%
 hctgan.random_states = seed_tuple
-intermediate_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
-intermediate_synthed_df.to_csv('debug.csv', index=False)
-intermediate_synthed_df.describe()
-
+last_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
+last_synthed_df.to_csv('debug.csv', index=False)
+last_synthed_df.describe()
 
 # %%
 df.describe()
+
+# %%
+draw_decision_region(df_train, last_synthed_df, df_test,
+                     target_colname=TARGET_COLNAME)
 
 # %% [markdown]
 # roc auc score in each epoch
@@ -363,11 +414,18 @@ df.describe()
 # %%
 print(feedback_function)
 df_result = pd.DataFrame()
-df_result['epoch'] = list(range(len(roc_auc_score_list)))
+x_list = list(range(len(roc_auc_score_list)))
+df_result['epoch'] = x_list
 df_result['roc_auc_score'] = roc_auc_score_list
 df_result['baseline'] = roc_auc_score_list[0]
 ax1 = df_result.plot('epoch', 'roc_auc_score')
 df_result.plot('epoch', 'roc_auc_score', kind='scatter', color='b', ax=ax1)
 df_result.plot('epoch', 'baseline', ax=ax1)
+ax1.fill_between(
+    x_list,
+    roc_auc_score_lower_list,
+    roc_auc_score_upper_list,
+    alpha=0.3,
+)
 
 # %%
