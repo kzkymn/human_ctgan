@@ -34,13 +34,14 @@ warnings.filterwarnings('ignore')
 
 # %%
 SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 20000
-SAMPLE_SIZE_OF_FEEDBACK_DATA = 10
+SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
 PERTURBATION_PER_FEEDBACK_DATUM = 2
 PERTURBATION_SIGMA = 2
 HCTGAN_FILE_PATH = './checkpoint/hctgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
 FEEDBACK_COLNAME = 'feedback'
 TARGET_COLNAME = 'target'
+ADDITIONAL_TRAINING_METHOD = 'ActiveLearning'
 
 # %% [markdown]
 # Test Settings
@@ -51,7 +52,7 @@ BOOTSTRAP_ITER_N = 100
 # %%
 # NOTE: If any of the explanatory or objective variables are categorical,
 # please include their names in this list.
-discrete_columns = [
+DISCRETE_COLUMNS = [
     TARGET_COLNAME
 ]
 
@@ -229,7 +230,7 @@ hctgan = HCTGANSynthesizer(sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_
                            epochs=3000)
 hctgan.random_states = seed_tuple
 hctgan.fit(df_train,
-           discrete_columns=discrete_columns)
+           discrete_columns=DISCRETE_COLUMNS)
 hctgan.random_states = seed_tuple
 first_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
 
@@ -303,51 +304,71 @@ def iterate_feedbacks(hctgan,
                       feedback_colname,
                       seed_tuple,
                       target_colname='target',
+                      discrete_columns=DISCRETE_COLUMNS,
                       start_n=1,
                       iter_n=20,
-                      bootstrap_iter_n=BOOTSTRAP_ITER_N):
+                      bootstrap_iter_n=BOOTSTRAP_ITER_N,
+                      training_method='HumanGAN',
+                      use_perturbation_when_active_learning=True):
     current_sigma = perturbation_sigma
     end_n = start_n + iter_n
 
-    copyed_hctgan = hctgan
-    copyed_hctgan.save(path=hctgan_file_path)
+    hctgan.save(path=hctgan_file_path)
+    hctgan.set_device(torch.device('cpu'))
     copyed_hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
         path=hctgan_file_path)
 
+    df_feedback_list = []
     for i in range(start_n, end_n):
         is_current_sigma_halfed = False
-        if i != 0 and i % 1000 == 0:
+        if i != 0 and i % 1 == 0:
             current_sigma /= 2
             is_current_sigma_halfed = True
 
         copyed_hctgan.save(path=hctgan_file_path)
 
-        copyed_hctgan.random_states = seed_tuple
-        copyed_hctgan.create_feedback_data_csv(csv_path=feedback_csv_path,
-                                               sample_size_of_feedback_data=sample_size_of_feedback_data,
-                                               perturbation_per_feedback_datum=perturbation_per_feedback_datum,
-                                               perturbation_sigma=current_sigma,
-                                               target_colname=feedback_colname)
+        if training_method == 'HumanGAN' or use_perturbation_when_active_learning:
+            copyed_hctgan.random_states = seed_tuple
+            copyed_hctgan.create_feedback_data_csv(csv_path=feedback_csv_path,
+                                                   sample_size_of_feedback_data=sample_size_of_feedback_data,
+                                                   perturbation_per_feedback_datum=perturbation_per_feedback_datum,
+                                                   perturbation_sigma=current_sigma,
+                                                   target_colname=feedback_colname)
+            # NOTE: Originally, a CSV file would be read here, with human feedback
+            # of the data evaluation values (i.e. probability of authenticity).
+            # However, since that is not available now, the evaluation values
+            # obtained by the classifier (e.g. KNN) are given afterwards.
+            feedback_df = pd.read_csv(feedback_csv_path)
+            data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
+        elif training_method == 'ActiveLearning':
+            copyed_hctgan.random_states = seed_tuple
+            feedback_df = copyed_hctgan.sample(n=sample_size_of_feedback_data)
+            data_for_feedback_orig = feedback_df.copy()
+        else:
+            raise ValueError('Unsupported training_mode:', training_method)
 
-        # NOTE: Originally, a CSV file would be read here, with human feedback
-        # of the data evaluation values (i.e. probability of authenticity).
-        # However, since that is not available now, the evaluation values
-        # obtained by the classifier (e.g. KNN) are given instead.
-        feedback_df = pd.read_csv(feedback_csv_path)
-        data_for_feedback_orig = feedback_df.drop(columns=feedback_colname)
+        # NOTE: Adding the data evaluation values described above.
         feedback_probs = feedback_function(data_for_feedback_orig)
         feedback_df[feedback_colname] = feedback_probs
         feedback_df.to_csv(
             f'./output/debug_feedbacks_iter_{i}.csv', index=False)
+        if training_method == 'ActiveLearning':
+            feedback_df = feedback_df[feedback_df[feedback_colname] >= 0.6]
+            df_feedback_list.append(feedback_df)
 
         copyed_hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
             path=hctgan_file_path)
         if is_current_sigma_halfed:
             copyed_hctgan.perturbation_sigma = current_sigma
 
-        copyed_hctgan.random_states = seed_tuple
-        copyed_hctgan.fit_to_feedback(data_for_feedback_orig,
-                                      feedback_probs)
+        if training_method == 'HumanGAN':
+            copyed_hctgan.random_states = seed_tuple
+            copyed_hctgan.fit_to_feedback(data_for_feedback_orig,
+                                          feedback_probs)
+        elif training_method == 'ActiveLearning':
+            copyed_hctgan.fit(pd.concat([df_train,
+                              pd.concat(df_feedback_list).drop(columns=feedback_colname)]),
+                              discrete_columns=discrete_columns)
 
         print(f'=== i {i: 03d} ===')
         copyed_hctgan.random_states = seed_tuple
@@ -381,7 +402,9 @@ hctgan = iterate_feedbacks(hctgan,
                            feedback_colname=FEEDBACK_COLNAME,
                            seed_tuple=seed_tuple,
                            target_colname=TARGET_COLNAME,
+                           discrete_columns=DISCRETE_COLUMNS,
                            iter_n=2, start_n=1,
+                           training_method=ADDITIONAL_TRAINING_METHOD,
                            bootstrap_iter_n=BOOTSTRAP_ITER_N)
 
 # %%
