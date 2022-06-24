@@ -449,7 +449,6 @@ first_synthed_df.describe()
 # %%
 hctgan.random_states = seed_tuple
 last_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
-last_synthed_df.to_csv('debug.csv', index=False)
 last_synthed_df.describe()
 
 # %%
