@@ -33,7 +33,10 @@ warnings.filterwarnings('ignore')
 # Human-CTGAN Settings
 
 # %%
-SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 20000
+
+
+# SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 2000  # for the strict test
+SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200  # for easy test (but incorrect)
 SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
 PERTURBATION_PER_FEEDBACK_DATUM = 2
 PERTURBATION_SIGMA = 2
@@ -47,7 +50,8 @@ ADDITIONAL_TRAINING_METHOD = 'ActiveLearning'
 # Test Settings
 
 # %%
-BOOTSTRAP_ITER_N = 100
+# BOOTSTRAP_ITER_N = 100  # for the strict test
+BOOTSTRAP_ITER_N = 2  # for easy test (but incorrect)
 
 # %%
 # NOTE: If any of the explanatory or objective variables are categorical,
@@ -117,10 +121,7 @@ def prepare_train_and_test(df,
         df_1_or_2['sepal length (cm)'] <= 6.6)
 
     df_0_train = df_0[train_criterion_of_df_0]
-    # df_0_test = df_0[~train_criterion_of_df_0]
-
     df_1_or_2_train = df_1_or_2[train_criterion_of_df_1_or_2]
-    # df_1_or_2_test = df_1_or_2[~train_criterion_of_df_1_or_2]
 
     df_train = pd.concat([df_0_train, df_1_or_2_train])
     df_test = df
@@ -205,20 +206,44 @@ def calc_conf_interval_of_auc_by_bootstrapping(hctgan,
 
 
 def draw_decision_region(df_train, df_synthed, df_test,
-                         target_colname='target'):
+                         target_colname='target',
+                         plot_max_num_of_train_data=5000,
+                         train_data_alpha=1,
+                         skip_drawing_train_data=False):
     clf = create_classifier_with_synthed_data(
         df_train=df_train, df_synthed=df_synthed,
         target_colname=target_colname)
 
     X_test = df_test.drop(columns=target_colname)
     y_test = df_test[target_colname]
-    ax1 = plot_decision_regions(X=X_test.values, y=y_test.values, clf=clf)
+    ax_1 = plot_decision_regions(X=X_test.values, y=y_test.values, clf=clf)
+
+    if skip_drawing_train_data:
+        return
+
+    # drawing train and synthesized data
     df_train_and_syn = pd.concat([df_train, df_synthed])
-    X_train_and_syn = df_train_and_syn.drop(columns=target_colname)
-    colnames = list(X_train_and_syn.columns)
-    X_train_and_syn.plot(colnames[0], colnames[1],
-                         kind='scatter', color='black',
-                         alpha=0.5, ax=ax1)
+    if len(df_train_and_syn) > plot_max_num_of_train_data:
+        df_train_and_syn = df_train_and_syn.sample(n=plot_max_num_of_train_data,
+                                                   random_state=42)
+    colnames = list(df_train_and_syn.columns)
+    for target_value in df_train_and_syn[target_colname].unique():
+        df_train_and_syn_for_drawing = df_train_and_syn[df_train_and_syn[target_colname] == target_value]
+
+        target_color = 'black'
+        if target_value == 0:
+            target_color = 'tab:blue'
+        elif target_value == 1:
+            target_color = 'tab:orange'
+        elif target_value == 2:
+            target_color = 'tab:green'
+
+        df_train_and_syn_for_drawing.plot(colnames[0], colnames[1],
+                                          kind='scatter', color=target_color,
+                                          alpha=train_data_alpha,
+                                          marker='.',
+                                          label=f'train_data_{target_value}',
+                                          ax=ax_1)
 
 
 # %%
@@ -248,7 +273,8 @@ original_roc_auc_score = calc_roc_auc_score(
 print('roc_auc_score:', original_roc_auc_score)
 
 # %%
-draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME)
+draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME,
+                     skip_drawing_train_data=True)
 
 # %%
 roc_auc_score_list = []
