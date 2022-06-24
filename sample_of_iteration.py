@@ -35,8 +35,8 @@ warnings.filterwarnings('ignore')
 # %%
 
 
-# SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 2000  # for the strict test
-SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200  # for easy test (but incorrect)
+SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 20000  # for the strict test
+# SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200  # for easy test (but incorrect)
 SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
 PERTURBATION_PER_FEEDBACK_DATUM = 2
 PERTURBATION_SIGMA = 2
@@ -50,8 +50,8 @@ ADDITIONAL_TRAINING_METHOD = 'ActiveLearning'
 # Test Settings
 
 # %%
-# BOOTSTRAP_ITER_N = 100  # for the strict test
-BOOTSTRAP_ITER_N = 2  # for easy test (but incorrect)
+BOOTSTRAP_ITER_N = 100  # for the strict test
+# BOOTSTRAP_ITER_N = 2  # for easy test (but incorrect)
 
 # %%
 # NOTE: If any of the explanatory or objective variables are categorical,
