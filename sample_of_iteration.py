@@ -115,7 +115,7 @@ def prepare_train_and_test(df,
     df_0 = df_train[df_train[target_colname] == 0]
     df_1_or_2 = df_train[~(df_train[target_colname] == 0)]
 
-    train_criterion_of_df_0 = (df_0['sepal length (cm)'] >= 4.7) & (
+    train_criterion_of_df_0 = (df_0['sepal length (cm)'] <= 4.5) & (
         df_0['sepal length (cm)'] <= 5.2)
     train_criterion_of_df_1_or_2 = (df_1_or_2['sepal length (cm)'] >= 5.9) & (
         df_1_or_2['sepal length (cm)'] <= 6.6)
