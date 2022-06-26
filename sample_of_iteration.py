@@ -66,7 +66,7 @@ PERTURBATION_PER_FEEDBACK_DATUM = 4
 # If there are large biases in the data initially trained on CTGAN,
 # the value of sigma should be relatively large.
 # However, it should be noted that if the sigma is too large,
-# the  CTGAN model tends to generate only the largest or smallest
+# the CTGAN model tends to generate only the largest or smallest
 # possible values of the data.
 PERTURBATION_SIGMA = 3
 
@@ -428,11 +428,13 @@ print_diff_between_original_and_generated_data(df_train, hctgan)
 original_roc_auc_score = calc_roc_auc_score(
     df_train, None, df_test, unique_y_labels_num,
     target_colname=TARGET_COLNAME)
-print('roc_auc_score:', original_roc_auc_score)
 
 # %% [markdown]
 # Because the model trained highly biased data,
-# The decision region is not very correct.
+# The ROC AUC score and the decision regions are not very correct.
+
+# %%
+print('roc_auc_score:', original_roc_auc_score)
 
 # %%
 draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME,
@@ -451,6 +453,11 @@ original_and_ctgan_roc_auc_score, score_lower, score_upper = calc_conf_interval_
                                                                                                         target_colname=TARGET_COLNAME,
                                                                                                         iter_n=BOOTSTRAP_ITER_N,
                                                                                                         percentage_of_confidence_interval=0.95)
+
+# %% [markdown]
+# Even added synthesized data to train data, nothing seems to be corrected.
+
+# %%
 print('roc_auc_score:', original_and_ctgan_roc_auc_score)
 
 # %%
@@ -550,7 +557,7 @@ draw_decision_region(df_train, last_synthed_df, df_test,
                      target_colname=TARGET_COLNAME)
 
 # %% [markdown]
-# ROC AUC score in each epoch
+# ### ROC AUC score in each epoch
 #
 # Epoch 0 is the result of the training data and CTGAN sythesized data.
 #
