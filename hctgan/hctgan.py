@@ -196,8 +196,9 @@ class HCTGANSynthesizer(CTGANSynthesizer):
             self.sample_size_of_feedback_data, condition_column=self.condition_column,
             condition_value=self.condition_value)
 
-        # TODO: クラスタリングして、その中心の最近傍の摂動だけ返すオプションを実装
-        # その時は返すクラスタ中心の数を指定する引数も追加
+        # TODO: It might be better to implement an option
+        # to return only cluster-centered nearest-neighbor perturbations.
+        # At that time, an argument specifying the number of clusters need to be added.
 
         # adding perturbations
         result_vector_list = []
