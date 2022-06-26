@@ -430,7 +430,7 @@ original_roc_auc_score = calc_roc_auc_score(
     target_colname=TARGET_COLNAME)
 
 # %% [markdown]
-# Because the model trained highly biased data,
+# Because the classification model trained highly biased data,
 # The ROC AUC score and the decision regions are not very correct.
 
 # %%
@@ -455,7 +455,7 @@ original_and_ctgan_roc_auc_score, score_lower, score_upper = calc_conf_interval_
                                                                                                         percentage_of_confidence_interval=0.95)
 
 # %% [markdown]
-# Even added synthesized data to train data, nothing seems to be corrected.
+# Even adding synthesized data to train data, nothing seems to be corrected.
 
 # %%
 print('roc_auc_score:', original_and_ctgan_roc_auc_score)
@@ -498,7 +498,7 @@ feedback_function = get_feedback_function_by_knn_and_rule_base(df)
 # feedback_function = create_wrong_feedback
 
 # %% [markdown]
-# ### Human-CTGAN Training (with human feedbacks)
+# ### Human-CTGAN Training
 
 # %%
 hctgan = iterate_feedbacks(hctgan,
@@ -516,7 +516,7 @@ hctgan = iterate_feedbacks(hctgan,
                            seed_tuple=seed_tuple,
                            target_colname=TARGET_COLNAME,
                            discrete_columns=DISCRETE_COLUMNS,
-                           iter_n=100, start_n=1,
+                           iter_n=2, start_n=1,
                            training_method=GAN_TRAINING_METHOD,
                            bootstrap_iter_n=BOOTSTRAP_ITER_N)
 
@@ -542,9 +542,9 @@ last_synthed_df.describe()
 df.describe()
 
 # %% [markdown]
-# Thanks to the feedback by the function, the distributions of the synthesized data
+# Thanks to the feedbacks by the function, the distributions of the synthesized data
 # are much closer to the true one.
-# However, the feedback is not perfect because it cannot correctly evaluate data
+# However, the feedbacks are not perfect because it cannot correctly evaluate data
 # outside of the original value range.
 # It is why some data are located in odd positions.
 #
@@ -559,7 +559,7 @@ draw_decision_region(df_train, last_synthed_df, df_test,
 # %% [markdown]
 # ### ROC AUC score in each epoch
 #
-# Epoch 0 is the result of the training data and CTGAN sythesized data.
+# Epoch 0 is the result of the classification model learning the training data and first CTGAN sythesized data.
 #
 # The blue band on the graph represents the bootstrap confidence interval (95% CI) for AUC ROC scores.
 
