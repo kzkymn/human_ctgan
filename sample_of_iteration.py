@@ -209,7 +209,8 @@ def draw_decision_region(df_train, df_synthed, df_test,
                          target_colname='target',
                          plot_max_num_of_train_data=5000,
                          train_data_alpha=1,
-                         skip_drawing_train_data=False):
+                         skip_drawing_train_data=False,
+                         paint_train_data_black=False):
     clf = create_classifier_with_synthed_data(
         df_train=df_train, df_synthed=df_synthed,
         target_colname=target_colname)
@@ -231,7 +232,11 @@ def draw_decision_region(df_train, df_synthed, df_test,
         df_train_and_syn_for_drawing = df_train_and_syn[df_train_and_syn[target_colname] == target_value]
 
         target_color = 'black'
-        if target_value == 0:
+        graph_label = f'train_data_{target_value}'
+        if paint_train_data_black:
+            target_color = 'black'
+            graph_label = None
+        elif target_value == 0:
             target_color = 'tab:blue'
         elif target_value == 1:
             target_color = 'tab:orange'
@@ -242,7 +247,7 @@ def draw_decision_region(df_train, df_synthed, df_test,
                                           kind='scatter', color=target_color,
                                           alpha=train_data_alpha,
                                           marker='.',
-                                          label=f'train_data_{target_value}',
+                                          label=graph_label,
                                           ax=ax_1)
 
 
@@ -274,7 +279,7 @@ print('roc_auc_score:', original_roc_auc_score)
 
 # %%
 draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME,
-                     skip_drawing_train_data=True)
+                     paint_train_data_black=True)
 
 # %%
 roc_auc_score_list = []
