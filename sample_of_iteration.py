@@ -68,7 +68,7 @@ PERTURBATION_PER_FEEDBACK_DATUM = 4
 # However, it should be noted that if the sigma is too large,
 # the CTGAN model tends to generate only the largest or smallest
 # possible values of the data.
-PERTURBATION_SIGMA = 3
+PERTURBATION_SIGMA = 2
 
 HCTGAN_FILE_PATH = './checkpoint/hctgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
@@ -312,7 +312,7 @@ def iterate_feedbacks(hctgan,
     df_feedback_list = []
     for i in range(start_n, end_n):
         is_current_sigma_halfed = False
-        if i != 0 and i % 1 == 0:
+        if i != 1 and i % 1 == 0:
             current_sigma /= 2
             is_current_sigma_halfed = True
 
@@ -564,7 +564,6 @@ draw_decision_region(df_train, last_synthed_df, df_test,
 # The blue band on the graph represents the bootstrap confidence interval (95% CI) for AUC ROC scores.
 
 # %%
-print(feedback_function)
 df_result = pd.DataFrame()
 x_list = list(range(len(roc_auc_score_list)))
 df_result['epoch'] = x_list
