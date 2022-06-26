@@ -56,6 +56,8 @@ def create_feedback_by_knn_with_proba(data_for_feedback,
 
     res = pred_proba_of_target[np.arange(
         len(pred_proba_of_target)), target_labels]
+    _tmp = _check_length_constraint(data_for_feedback)
+    res = res * _tmp
     return np.array(res)
 
 

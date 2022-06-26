@@ -38,8 +38,8 @@ warnings.filterwarnings('ignore')
 SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 20000  # for the strict test
 # SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200  # for easy test (but incorrect)
 SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
-PERTURBATION_PER_FEEDBACK_DATUM = 2
-PERTURBATION_SIGMA = 2
+PERTURBATION_PER_FEEDBACK_DATUM = 4
+PERTURBATION_SIGMA = 3
 HCTGAN_FILE_PATH = './checkpoint/hctgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
 FEEDBACK_COLNAME = 'feedback'
