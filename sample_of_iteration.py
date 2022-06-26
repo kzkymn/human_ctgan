@@ -516,7 +516,7 @@ hctgan = iterate_feedbacks(hctgan,
                            seed_tuple=seed_tuple,
                            target_colname=TARGET_COLNAME,
                            discrete_columns=DISCRETE_COLUMNS,
-                           iter_n=2, start_n=1,
+                           iter_n=100, start_n=1,
                            training_method=GAN_TRAINING_METHOD,
                            bootstrap_iter_n=BOOTSTRAP_ITER_N)
 
