@@ -1,3 +1,6 @@
+# %%[markdown]
+# # Human-CTGAN
+
 # %%
 from functools import partial
 import warnings
@@ -5,7 +8,6 @@ import warnings
 from IPython import get_ipython
 from mlxtend.plotting import plot_decision_regions
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import OneClassSVM
 from hctgan import HCTGANSynthesizer
 import numpy as np
 import pandas as pd
@@ -17,8 +19,6 @@ from xgboost import XGBClassifier
 
 from util import (create_random_feedback,
                   create_wrong_feedback,
-                  create_feedback_by_one_class_svm,
-                  create_feedback_by_knn,
                   create_feedback_by_knn_with_proba,
                   create_feedback_function_by_rule_base,
                   print_diff_between_original_and_generated_data)
@@ -30,26 +30,57 @@ get_ipython().run_line_magic('autoreload', '2')
 warnings.filterwarnings('ignore')
 
 # %%[markdown]
-# Human-CTGAN Settings
+# ## Human-CTGAN Settings
 
 # %%
 
-
+# NOTE: SAMPLE_SIZE_OF_SYNTHESIZED_DATA is sample size of synthesized data used for classification
 SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 20000  # for the strict test
 # SAMPLE_SIZE_OF_SYNTHESIZED_DATA = 200  # for easy test (but incorrect)
+
+# NOTE: GAN_TRAINING_METHOD can be set two values.
+# 'HumanGAN' and 'ActiveLearning'.
+# 'ActiveLearning' tends to produce better results
+# when the training data have strong biases.
+GAN_TRAINING_METHOD = 'ActiveLearning'
+# NOTE: You should set USE_PERTURBATION_WHEN_ACTIVE_LEARNING True,
+# if there is considered to be a strong bias in the training data.
+USE_PERTURBATION_WHEN_ACTIVE_LEARNING = True
+
+# NOTE: You need to perform the CTGAN at sufficient epochs before you run Human-CTGAN.
+CTGAN_FEEDBACK_EPOCHS = 3000
+
+# NOTE: Feedback data are those that need to be given a human evaluation in the Human-in-the-Loop.
+# If GAN_TRAINING_METHOD is 'HumanGAN' or USE_PERTURBATION_WHEN_ACTIVE_LEARNING is True,
+# The actual sample size of the feedback data is given by the following formula.
+# actual sample size := SAMPLE_SIZE_OF_FEEDBACK_DATA * PERTURBATION_PER_FEEDBACK_DATUM * 2
+# Otherwise, the actual sample size is same as SAMPLE_SIZE_OF_FEEDBACK_DATA.
 SAMPLE_SIZE_OF_FEEDBACK_DATA = 100
 PERTURBATION_PER_FEEDBACK_DATUM = 4
+# NOTE: PERTURBATION_SIGMA is the standard deviation of the perturbation for one feedback data.
+# Perturbations are given by a normal distribution.
+# Per single feedback datum, two perturbated data are generated.
+#
+# One is <feedback data> + <perturbation>, another is <feedback data> - <perturbation>.
+#
+# If there are large biases in the data initially trained on CTGAN,
+# the value of sigma should be relatively large.
+# However, it should be noted that if the sigma is too large,
+# the  CTGAN model tends to generate only the largest or smallest
+# possible values of the data.
 PERTURBATION_SIGMA = 3
+
 HCTGAN_FILE_PATH = './checkpoint/hctgan_test'
 FEEDBACK_CSV_PATH = './output/feedbacks_test.csv'
 FEEDBACK_COLNAME = 'feedback'
 TARGET_COLNAME = 'target'
-ADDITIONAL_TRAINING_METHOD = 'ActiveLearning'
+
 
 # %% [markdown]
-# Test Settings
+# ## Test Settings
 
 # %%
+# NOTE: BOOTSTRAP_ITER_N is the number of bootstrap iterations to calculate the ROC AUC score.
 BOOTSTRAP_ITER_N = 100  # for the strict test
 # BOOTSTRAP_ITER_N = 2  # for easy test (but incorrect)
 
@@ -60,13 +91,10 @@ DISCRETE_COLUMNS = [
     TARGET_COLNAME
 ]
 
+# %% [markdown]
+# ## Utility Functions
 
 # %%
-
-
-def get_feedback_function_by_one_class_svm(df):
-    one_class_svm = OneClassSVM().fit(df)
-    return partial(create_feedback_by_one_class_svm, one_class_svm=one_class_svm)
 
 
 def get_feedback_function_by_knn(df, target_colname='target'):
@@ -74,7 +102,6 @@ def get_feedback_function_by_knn(df, target_colname='target'):
     y = df[target_colname]
 
     knn = KNeighborsClassifier().fit(X, y)
-    # return partial(create_feedback_by_knn, knn=knn)
     return partial(create_feedback_by_knn_with_proba, knn=knn)
 
 
@@ -90,7 +117,18 @@ def get_feedback_function_by_rule_base(original_df, target_colname='target'):
                    min_df=min_df,
                    target_colname=target_colname)
 
-# %%
+
+def get_feedback_function_by_knn_and_rule_base(original_df, target_colname='target'):
+    knn_func = get_feedback_function_by_knn(original_df, target_colname)
+    rb_func = get_feedback_function_by_rule_base(original_df, target_colname)
+
+    def hybrid_feedback_function(df, knn_func, rb_func):
+        knn_res = knn_func(df)
+        rb_res = rb_func(df)
+        return knn_res * rb_res
+
+    return partial(hybrid_feedback_function,
+                   knn_func=knn_func, rb_func=rb_func)
 
 
 def get_iris_dataframe(target_colname='target'):
@@ -129,19 +167,6 @@ def prepare_train_and_test(df,
     return df_train, df_test
 
 
-df = get_iris_dataframe(target_colname=TARGET_COLNAME)
-df_train, df_test = prepare_train_and_test(df,
-                                           target_colname=TARGET_COLNAME)
-
-# %%
-df_train.describe()
-
-# %%
-df_test.describe()
-
-# %%
-
-
 def create_seed_tuple(np_seed=333, torch_seed=333):
     return (np.random.RandomState(np_seed), torch.manual_seed(torch_seed))
 
@@ -156,7 +181,7 @@ def _calc_roc_auc_score(y_true, y_pred_proba, unique_y_labels_num):
 
 def create_classifier_with_synthed_data(df_train, df_synthed,
                                         target_colname='target'):
-    clf = XGBClassifier()
+    clf = XGBClassifier(eval_metric='logloss')
     if df_synthed is not None:
         tmp_df = pd.concat([df_train, df_synthed])
     else:
@@ -235,7 +260,10 @@ def draw_decision_region(df_train, df_synthed, df_test,
         graph_label = f'train_data_{target_value}'
         if paint_train_data_black:
             target_color = 'black'
-            graph_label = None
+            if target_value == 0:
+                graph_label = 'train_data'
+            else:
+                graph_label = None
         elif target_value == 0:
             target_color = 'tab:blue'
         elif target_value == 1:
@@ -250,76 +278,6 @@ def draw_decision_region(df_train, df_synthed, df_test,
                                           label=graph_label,
                                           ax=ax_1)
 
-
-# %%
-seed_tuple = create_seed_tuple()
-
-hctgan = HCTGANSynthesizer(sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
-                           perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
-                           perturbation_sigma=PERTURBATION_SIGMA,
-                           epochs=3000)
-hctgan.random_states = seed_tuple
-hctgan.fit(df_train,
-           discrete_columns=DISCRETE_COLUMNS)
-hctgan.random_states = seed_tuple
-first_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
-
-# %%
-unique_y_labels_num = len(df[TARGET_COLNAME].unique())
-
-print('================================')
-print('== Training only original data==')
-print('================================')
-hctgan.random_states = seed_tuple
-print_diff_between_original_and_generated_data(df_train, hctgan)
-original_roc_auc_score = calc_roc_auc_score(
-    df_train, None, df_test, unique_y_labels_num,
-    target_colname=TARGET_COLNAME)
-print('roc_auc_score:', original_roc_auc_score)
-
-# %%
-draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME,
-                     paint_train_data_black=True)
-
-# %%
-roc_auc_score_list = []
-roc_auc_score_lower_list = []
-roc_auc_score_upper_list = []
-
-# %%
-print('================')
-print('== Only CTGAN ==')
-print('================')
-hctgan.random_states = seed_tuple
-print_diff_between_original_and_generated_data(df_train, hctgan)
-original_and_ctgan_roc_auc_score, score_lower, score_upper = calc_conf_interval_of_auc_by_bootstrapping(hctgan,
-                                                                                                        df_train,
-                                                                                                        seed_tuple,
-                                                                                                        sample_size_of_synthesized_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
-                                                                                                        target_colname=TARGET_COLNAME,
-                                                                                                        iter_n=BOOTSTRAP_ITER_N,
-                                                                                                        percentage_of_confidence_interval=0.95)
-roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
-roc_auc_score_lower_list.append(score_lower)
-roc_auc_score_upper_list.append(score_upper)
-print('roc_auc_score:', original_and_ctgan_roc_auc_score)
-
-# %%
-draw_decision_region(df_train, first_synthed_df, df_test,
-                     target_colname=TARGET_COLNAME)
-
-# %%
-
-
-# %%
-# feedback_function = get_feedback_function_by_one_class_svm(df)
-feedback_function = get_feedback_function_by_knn(df)
-# feedback_function = get_feedback_function_by_rule_base(df)
-# feedback_function = create_random_feedback
-# feedback_function = create_wrong_feedback
-
-
-# %%
 
 def iterate_feedbacks(hctgan,
                       df_train,
@@ -340,7 +298,9 @@ def iterate_feedbacks(hctgan,
                       iter_n=20,
                       bootstrap_iter_n=BOOTSTRAP_ITER_N,
                       training_method='HumanGAN',
-                      use_perturbation_when_active_learning=True):
+                      use_perturbation_when_active_learning=USE_PERTURBATION_WHEN_ACTIVE_LEARNING):
+    """simulate Human-in-the-Loop processes of Human-CTGAN
+    """
     current_sigma = perturbation_sigma
     end_n = start_n + iter_n
 
@@ -358,6 +318,7 @@ def iterate_feedbacks(hctgan,
 
         copyed_hctgan.save(path=hctgan_file_path)
 
+        # [1ST. PROCESS] create feedback data
         if training_method == 'HumanGAN' or use_perturbation_when_active_learning:
             copyed_hctgan.random_states = seed_tuple
             copyed_hctgan.create_feedback_data_csv(csv_path=feedback_csv_path,
@@ -387,16 +348,22 @@ def iterate_feedbacks(hctgan,
             feedback_df = feedback_df[feedback_df[feedback_colname] >= 0.6]
             df_feedback_list.append(feedback_df)
 
+        # [2ND. PROCESS] create feedback datarefit using feedback data
+        # NOTE: This process is usually done some days after the feedback generation.
+        # To simulate this, the Human-CTGAN model is read back from the file
+        # once it has been saved.
         copyed_hctgan: HCTGANSynthesizer = HCTGANSynthesizer.load(
             path=hctgan_file_path)
         if is_current_sigma_halfed:
             copyed_hctgan.perturbation_sigma = current_sigma
 
         if training_method == 'HumanGAN':
+            # NOTE: fit_to_feedback method performs a back propagation logic with the feedback data.
             copyed_hctgan.random_states = seed_tuple
             copyed_hctgan.fit_to_feedback(data_for_feedback_orig,
                                           feedback_probs)
         elif training_method == 'ActiveLearning':
+            # NOTE: HCTGAN refits the CTGAN model with the feedback data.
             copyed_hctgan.fit(pd.concat([df_train,
                               pd.concat(df_feedback_list).drop(columns=feedback_colname)]),
                               discrete_columns=discrete_columns)
@@ -418,6 +385,114 @@ def iterate_feedbacks(hctgan,
     return copyed_hctgan
 
 
+# %% [markdown]
+# ## Main Logic
+
+# %%
+df = get_iris_dataframe(target_colname=TARGET_COLNAME)
+df_train, df_test = prepare_train_and_test(df,
+                                           target_colname=TARGET_COLNAME)
+
+# %%
+df_train.describe()
+
+# %%
+df_test.describe()
+
+
+# %% [markdown]
+# ### Initial CTGAN Training (with no human feedbacks)
+
+# %%
+seed_tuple = create_seed_tuple()
+
+hctgan = HCTGANSynthesizer(sample_size_of_feedback_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                           perturbation_per_feedback_datum=PERTURBATION_PER_FEEDBACK_DATUM,
+                           perturbation_sigma=PERTURBATION_SIGMA,
+                           epochs=CTGAN_FEEDBACK_EPOCHS)
+hctgan.random_states = seed_tuple
+hctgan.fit(df_train,
+           discrete_columns=DISCRETE_COLUMNS)
+hctgan.random_states = seed_tuple
+first_synthed_df = hctgan.sample(SAMPLE_SIZE_OF_SYNTHESIZED_DATA)
+
+# %%
+unique_y_labels_num = len(df[TARGET_COLNAME].unique())
+
+# %%
+print('================================')
+print('== Training only original data==')
+print('================================')
+hctgan.random_states = seed_tuple
+print_diff_between_original_and_generated_data(df_train, hctgan)
+original_roc_auc_score = calc_roc_auc_score(
+    df_train, None, df_test, unique_y_labels_num,
+    target_colname=TARGET_COLNAME)
+print('roc_auc_score:', original_roc_auc_score)
+
+# %% [markdown]
+# Because the model trained highly biased data,
+# The decision region is not very correct.
+
+# %%
+draw_decision_region(df_train, None, df_test, target_colname=TARGET_COLNAME,
+                     paint_train_data_black=True)
+
+# %%
+print('================')
+print('== Only CTGAN ==')
+print('================')
+hctgan.random_states = seed_tuple
+print_diff_between_original_and_generated_data(df_train, hctgan)
+original_and_ctgan_roc_auc_score, score_lower, score_upper = calc_conf_interval_of_auc_by_bootstrapping(hctgan,
+                                                                                                        df_train,
+                                                                                                        seed_tuple,
+                                                                                                        sample_size_of_synthesized_data=SAMPLE_SIZE_OF_FEEDBACK_DATA,
+                                                                                                        target_colname=TARGET_COLNAME,
+                                                                                                        iter_n=BOOTSTRAP_ITER_N,
+                                                                                                        percentage_of_confidence_interval=0.95)
+print('roc_auc_score:', original_and_ctgan_roc_auc_score)
+
+# %%
+roc_auc_score_list = []
+roc_auc_score_lower_list = []
+roc_auc_score_upper_list = []
+
+roc_auc_score_list.append(original_and_ctgan_roc_auc_score)
+roc_auc_score_lower_list.append(score_lower)
+roc_auc_score_upper_list.append(score_upper)
+
+# %% [markdown]
+# Due to the biased data,
+# the distribution of synthesized data by CTGAN is also incorrect.
+
+# %%
+draw_decision_region(df_train, first_synthed_df, df_test,
+                     target_colname=TARGET_COLNAME)
+
+# %% [markdown]
+# ### Feedback Function Settings
+# In practice, it is necessary for humans to provide feedback
+# on the synthesized data.
+# Feedback values must take a value between 0 and 1.
+# The more data seem to be authentic,
+# the closer to 1 you should set the values.
+#
+# But in this sample, feedbacks are given by a function instead of a human.
+
+# %%
+# NOTE: Functions that give good feedbacks.
+# feedback_function = get_feedback_function_by_knn(df)
+# feedback_function = get_feedback_function_by_rule_base(df)
+feedback_function = get_feedback_function_by_knn_and_rule_base(df)
+
+# NOTE: Functions that give **BAD** feedbacks. (for operation checking)
+# feedback_function = create_random_feedback
+# feedback_function = create_wrong_feedback
+
+# %% [markdown]
+# ### Human-CTGAN Training (with human feedbacks)
+
 # %%
 hctgan = iterate_feedbacks(hctgan,
                            df_train,
@@ -435,7 +510,7 @@ hctgan = iterate_feedbacks(hctgan,
                            target_colname=TARGET_COLNAME,
                            discrete_columns=DISCRETE_COLUMNS,
                            iter_n=2, start_n=1,
-                           training_method=ADDITIONAL_TRAINING_METHOD,
+                           training_method=GAN_TRAINING_METHOD,
                            bootstrap_iter_n=BOOTSTRAP_ITER_N)
 
 # %%
@@ -459,14 +534,27 @@ last_synthed_df.describe()
 # %%
 df.describe()
 
+# %% [markdown]
+# Thanks to the feedback by the function, the distributions of the synthesized data
+# are much closer to the true one.
+# However, the feedback is not perfect because it cannot correctly evaluate data
+# outside of the original value range.
+# It is why some data are located in odd positions.
+#
+# So, even when humans give feedbacks, you should consider
+# how the feedbacks you give should be modified
+# based on the results of the active learnings or the back propagation processes.
+
 # %%
 draw_decision_region(df_train, last_synthed_df, df_test,
                      target_colname=TARGET_COLNAME)
 
 # %% [markdown]
-# roc auc score in each epoch
+# ROC AUC score in each epoch
 #
 # Epoch 0 is the result of the training data and CTGAN sythesized data.
+#
+# The blue band on the graph represents the bootstrap confidence interval (95% CI) for AUC ROC scores.
 
 # %%
 print(feedback_function)
