@@ -10,9 +10,10 @@ def print_diff_between_original_and_generated_data(original_data,
             continue
         print(f'【{c}】')
         if show_original_data_info:
-            print("original data")
+            print("# original data")
             print(original_data[c].value_counts(normalize=True))
 
-        print("generated data")
+        print('')
+        print("# generated data")
         print(sampled_df[c].value_counts(normalize=True))
         print('=====')
