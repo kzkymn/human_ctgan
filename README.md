@@ -309,6 +309,15 @@ But in the sample code, feedbacks are given by the function instead of a human.
 feedback_function = get_feedback_function_by_knn_and_rule_base(df)
 ```
 
+In the table below, you can see how the feedback data are.  
+Humans must fill "feedback" column with values between 0 and 1.
+
+|sepal length (cm)|sepal width (cm)|target|feedback|
+|-----------------|----------------|------|--------|
+|6.48274780724834|3.77748146236847|2|0.8|
+|5.65642825020731|2.65161707453976|1|0.6|
+|6.47100701527128|3.77748146236847|2|0.8|
+
 ### Result of Human-CTGAN
 
 Thanks to the feedbacks by the function, the distributions of the synthesized data are much closer to the true one.  
