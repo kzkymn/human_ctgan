@@ -310,7 +310,7 @@ feedback_function = get_feedback_function_by_knn_and_rule_base(df)
 ```
 
 In the table below, you can see how the feedback data are.  
-Humans must fill "feedback" column with values between 0 and 1.
+In the actual case, humans must fill the "feedback" column with values between 0 and 1.
 
 |sepal length (cm)|sepal width (cm)|target|feedback|
 |-----------------|----------------|------|--------|
