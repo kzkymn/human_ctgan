@@ -7,7 +7,7 @@ The result of the sample code(sample_of_iteration.py) can be read the below.
 ## Summary of the sample data (iris)
 
 <div>
-<table border="1" class="dataframe">
+<table>
   <thead>
     <tr style="text-align: right;">
       <th></th>
@@ -74,7 +74,7 @@ The result of the sample code(sample_of_iteration.py) can be read the below.
 The train data are biased.
 
 <div>
-<table border="1" class="dataframe">
+<table>
   <thead>
     <tr style="text-align: right;">
       <th></th>
