@@ -308,9 +308,17 @@ But in the sample code, feedbacks are given by the function instead of a human.
 ```python
 feedback_function = get_feedback_function_by_knn_and_rule_base(df)
 ```
+In the actual case, humans must fill the "feedback" column with values between 0 and 1.  
+If you execute hctgan.create_feedback_data_csv(), you will get a CSV file with the following contents.  
+And the "feedback" column in the CSV file is empty. You must fill this column.
 
-In the table below, you can see how the feedback data are.  
-In the actual case, humans must fill the "feedback" column with values between 0 and 1.
+|sepal length (cm)|sepal width (cm)|target|feedback|
+|-----------------|----------------|------|--------|
+|6.48274780724834|3.77748146236847|2| |
+|5.65642825020731|2.65161707453976|1| |
+|6.47100701527128|3.77748146236847|2| |
+
+In the table below, you can see how the feedback data should be filled.
 
 |sepal length (cm)|sepal width (cm)|target|feedback|
 |-----------------|----------------|------|--------|
